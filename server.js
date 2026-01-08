@@ -1,41 +1,41 @@
-const http = require('http');
-const fs = require('fs');
-const path = require('path');
-const { marked } = require('marked');
+const http = require("http");
+const fs = require("fs");
+const path = require("path");
+const { marked } = require("marked");
 
 const PORT = process.env.PORT || 4000;
-const DOCS_DIR = process.argv[2] || '.';
+const DOCS_DIR = process.argv[2] || ".";
 
 // Track connected clients for live reload
 const clients = new Set();
 
 // Custom extension to handle mermaid code blocks
 const mermaidExtension = {
-  name: 'mermaid',
-  level: 'block',
+  name: "mermaid",
+  level: "block",
   renderer(token) {
-    if (token.type === 'code' && token.lang === 'mermaid') {
+    if (token.type === "code" && token.lang === "mermaid") {
       return `<div class="mermaid">${token.text}</div>`;
     }
     return false;
-  }
+  },
 };
 
 // Override the default code renderer
 const renderer = {
   code(token) {
-    if (token.lang === 'mermaid') {
+    if (token.lang === "mermaid") {
       return `<div class="mermaid">${token.text}</div>`;
     }
     // Default code block rendering
-    const lang = token.lang ? ` class="language-${token.lang}"` : '';
+    const lang = token.lang ? ` class="language-${token.lang}"` : "";
     return `<pre><code${lang}>${token.text}</code></pre>`;
-  }
+  },
 };
 
 marked.use({ renderer, gfm: true, breaks: true });
 
-const html = (content, title = 'Mermaid Server') => `
+const html = (content, title = "Mermaid Server") => `
 <!DOCTYPE html>
 <html>
 <head>
@@ -195,17 +195,36 @@ const html = (content, title = 'Mermaid Server') => `
 
   <script>
     // Live reload via Server-Sent Events
-    const evtSource = new EventSource('/__reload');
-    evtSource.onmessage = (e) => {
-      if (e.data === 'reload') {
-        const indicator = document.getElementById('reload-indicator');
-        indicator.classList.add('show');
-        setTimeout(() => location.reload(), 300);
+    let evtSource;
+
+    function connectSSE() {
+      if (evtSource) evtSource.close();
+
+      evtSource = new EventSource('/__reload');
+
+      evtSource.onmessage = (e) => {
+        if (e.data === 'reload') {
+          const indicator = document.getElementById('reload-indicator');
+          indicator.classList.add('show');
+          // Close connection immediately before reloading to free up socket
+          evtSource.close();
+          setTimeout(() => location.reload(), 300);
+        }
+      };
+
+      evtSource.onerror = (e) => {
+        // console.log('Live reload disconnected');
+      };
+    }
+
+    connectSSE();
+
+    // Explicitly close connection when navigating away
+    window.addEventListener('beforeunload', () => {
+      if (evtSource) {
+        evtSource.close();
       }
-    };
-    evtSource.onerror = () => {
-      console.log('Live reload disconnected, reconnecting...');
-    };
+    });
 
     // Fullscreen diagram modal
     const modal = document.getElementById('diagram-modal');
@@ -216,7 +235,7 @@ const html = (content, title = 'Mermaid Server') => `
       modalContent.innerHTML = diagramHtml;
       modal.classList.add('active');
       document.body.style.overflow = 'hidden';
-      
+
       // Force SVG to use full width, auto height
       const svg = modalContent.querySelector('svg');
       if (svg) {
@@ -257,17 +276,17 @@ const renderMarkdown = (md) => {
   return marked(md);
 };
 
-const getMarkdownFiles = (dir, prefix = '') => {
+const getMarkdownFiles = (dir, prefix = "") => {
   const files = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
-  
+
   for (const entry of entries) {
-    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
-    
+    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+
     const fullPath = path.join(prefix, entry.name);
     if (entry.isDirectory()) {
       files.push(...getMarkdownFiles(path.join(dir, entry.name), fullPath));
-    } else if (entry.name.endsWith('.md')) {
+    } else if (entry.name.endsWith(".md")) {
       files.push(fullPath);
     }
   }
@@ -277,41 +296,71 @@ const getMarkdownFiles = (dir, prefix = '') => {
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const pathname = decodeURIComponent(url.pathname);
-  
+
   // Server-Sent Events endpoint for live reload
-  if (pathname === '/__reload') {
+  if (pathname === "/__reload") {
     res.writeHead(200, {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      'Connection': 'keep-alive',
-      'Access-Control-Allow-Origin': '*',
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      Connection: "keep-alive",
+      "Access-Control-Allow-Origin": "*",
     });
-    res.write('data: connected\n\n');
-    
+    res.write("data: connected\n\n");
+
+    // Heartbeat to keep connection alive and detect disconnects
+    const heartbeat = setInterval(() => {
+      if (res.writableEnded || res.finished) {
+        clearInterval(heartbeat);
+        return;
+      }
+      res.write(": ping\n\n");
+    }, 15000);
+
     clients.add(res);
-    req.on('close', () => clients.delete(res));
+
+    const cleanup = () => {
+      clients.delete(res);
+      clearInterval(heartbeat);
+    };
+
+    req.on("close", cleanup);
+    res.on("close", cleanup);
+    res.on("error", (err) => {
+      cleanup();
+    });
+
     return;
   }
-  
+
   const filePath = path.join(DOCS_DIR, pathname);
-  
-  res.setHeader('Content-Type', 'text/html; charset=utf-8');
-  
-  if (pathname === '/') {
+
+  res.setHeader("Content-Type", "text/html; charset=utf-8");
+
+  // IMPORTANT: Disable keep-alive for main content to prevent connection exhaustion
+  // We save the open connections for the SSE endpoint
+  res.setHeader("Connection", "close");
+
+  if (pathname === "/") {
     // List markdown files
     const files = getMarkdownFiles(DOCS_DIR);
     if (files.length === 0) {
-      res.end(html('<h1>Mermaid Server</h1><p>No markdown files found in this directory.</p>'));
+      res.end(
+        html(
+          "<h1>Mermaid Server</h1><p>No markdown files found in this directory.</p>",
+        ),
+      );
     } else {
       const list = files
         .sort()
-        .map(f => `<li><a href="/${f}">${f}</a></li>`)
-        .join('');
-      res.end(html(`<h1>Mermaid Server</h1><ul class="file-list">${list}</ul>`));
+        .map((f) => `<li><a href="/${f}">${f}</a></li>`)
+        .join("");
+      res.end(
+        html(`<h1>Mermaid Server</h1><ul class="file-list">${list}</ul>`),
+      );
     }
-  } else if (pathname.endsWith('.md')) {
+  } else if (pathname.endsWith(".md")) {
     if (fs.existsSync(filePath)) {
-      const content = fs.readFileSync(filePath, 'utf-8');
+      const content = fs.readFileSync(filePath, "utf-8");
       const fileName = path.basename(filePath);
       const rendered = `
         <div class="back-link"><a href="/">&larr; Back to file list</a></div>
@@ -320,57 +369,80 @@ const server = http.createServer((req, res) => {
       res.end(html(rendered, fileName));
     } else {
       res.statusCode = 404;
-      res.end(html('<h1>404 - File Not Found</h1><p><a href="/">Back to file list</a></p>'));
+      res.end(
+        html(
+          '<h1>404 - File Not Found</h1><p><a href="/">Back to file list</a></p>',
+        ),
+      );
     }
   } else {
     res.statusCode = 404;
-    res.end(html('<h1>404 - Not Found</h1><p><a href="/">Back to file list</a></p>'));
+    res.end(
+      html('<h1>404 - Not Found</h1><p><a href="/">Back to file list</a></p>'),
+    );
   }
 });
 
 // File watcher for live reload
 const watchedFiles = new Set();
+let debounceTimer;
 
 const notifyClients = () => {
-  for (const client of clients) {
-    client.write('data: reload\n\n');
-  }
+  if (debounceTimer) clearTimeout(debounceTimer);
+
+  debounceTimer = setTimeout(() => {
+    console.log(
+      `[${new Date().toLocaleTimeString()}] Notifying ${clients.size} clients of changes`,
+    );
+    for (const client of clients) {
+      if (client.writable && !client.finished) {
+        client.write("data: reload\n\n");
+      }
+    }
+    debounceTimer = null;
+  }, 100);
 };
 
 const setupWatcher = () => {
   const watchDir = (dir) => {
     if (watchedFiles.has(dir)) return;
-    
+
     try {
-      const watcher = fs.watch(dir, { recursive: true }, (eventType, filename) => {
-        if (filename && filename.endsWith('.md')) {
-          console.log(`[${new Date().toLocaleTimeString()}] File changed: ${filename}`);
-          notifyClients();
-        }
+      const watcher = fs.watch(
+        dir,
+        { recursive: true },
+        (eventType, filename) => {
+          if (filename && filename.endsWith(".md")) {
+            console.log(
+              `[${new Date().toLocaleTimeString()}] File changed: ${filename}`,
+            );
+            notifyClients();
+          }
+        },
+      );
+
+      watcher.on("error", (err) => {
+        console.error("Watch error:", err.message);
       });
-      
-      watcher.on('error', (err) => {
-        console.error('Watch error:', err.message);
-      });
-      
+
       watchedFiles.add(dir);
       console.log(`Watching for changes in: ${path.resolve(dir)}`);
     } catch (err) {
-      console.error('Failed to setup watcher:', err.message);
+      console.error("Failed to setup watcher:", err.message);
     }
   };
-  
+
   watchDir(DOCS_DIR);
 };
 
 server.listen(PORT, () => {
   console.log(`\nMermaid Server running at http://localhost:${PORT}`);
   console.log(`Serving files from: ${path.resolve(DOCS_DIR)}`);
-  console.log('\nFeatures:');
-  console.log('  - Markdown rendering with marked');
-  console.log('  - Mermaid diagram support');
-  console.log('  - Live reload on file changes');
-  console.log('\nPress Ctrl+C to stop\n');
-  
+  console.log("\nFeatures:");
+  console.log("  - Markdown rendering with marked");
+  console.log("  - Mermaid diagram support");
+  console.log("  - Live reload on file changes (SSE)");
+  console.log("\nPress Ctrl+C to stop\n");
+
   setupWatcher();
 });
