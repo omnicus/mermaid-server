@@ -162,7 +162,12 @@ const html = (content, title = "Mermaid Server") => `
     .file-list { list-style: none; padding: 0; }
     .file-list li { padding: 0.5rem 0; border-bottom: 1px solid #eee; }
     .file-list a { display: block; }
-    .back-link { margin-bottom: 1rem; }
+    .back-link { 
+      margin-bottom: 1rem; 
+      display: flex; 
+      justify-content: space-between; 
+      align-items: center; 
+    }
     table { border-collapse: collapse; width: 100%; margin: 1rem 0; }
     th, td { border: 1px solid #ddd; padding: 0.5rem; text-align: left; }
     th { background: #f4f4f4; }
@@ -276,7 +281,27 @@ const renderMarkdown = (md) => {
   return marked(md);
 };
 
-const getMarkdownFiles = (dir, prefix = "") => {
+const getH1Title = (md) => {
+  const match = md.match(/^#\s+(.+)$/m);
+  return match ? match[1].trim() : null;
+};
+
+const nav = (showAllLink = false, showBack = true, currentPath = "") => {
+  let allLink = "";
+  if (showAllLink) {
+    const dirPath = currentPath.endsWith(".md") ? path.dirname(currentPath) : currentPath;
+    const targetUrl = dirPath === "." || dirPath === "/" ? "/?all=true" : `${dirPath}/?all=true`;
+    allLink = `<a href="${targetUrl}">Show all files in folder</a>`;
+  }
+  return `
+    <div class="back-link">
+      ${showBack ? `<a href="javascript:history.back()">&larr; Back</a>` : "<span></span>"}
+      ${allLink}
+    </div>
+  `;
+};
+
+const getMarkdownFiles = (dir, prefix = "", recursive = true) => {
   const files = [];
   const entries = fs.readdirSync(dir, { withFileTypes: true });
 
@@ -285,7 +310,11 @@ const getMarkdownFiles = (dir, prefix = "") => {
 
     const fullPath = path.join(prefix, entry.name);
     if (entry.isDirectory()) {
-      files.push(...getMarkdownFiles(path.join(dir, entry.name), fullPath));
+      if (recursive) {
+        files.push(...getMarkdownFiles(path.join(dir, entry.name), fullPath, true));
+      } else {
+        files.push(fullPath + "/");
+      }
     } else if (entry.name.endsWith(".md")) {
       files.push(fullPath);
     }
@@ -333,53 +362,74 @@ const server = http.createServer((req, res) => {
   }
 
   const filePath = path.join(DOCS_DIR, pathname);
+  const stats = fs.existsSync(filePath) ? fs.statSync(filePath) : null;
+  const isDir = stats && stats.isDirectory();
 
   res.setHeader("Content-Type", "text/html; charset=utf-8");
-
-  // IMPORTANT: Disable keep-alive for main content to prevent connection exhaustion
-  // We save the open connections for the SSE endpoint
   res.setHeader("Connection", "close");
 
-  if (pathname === "/") {
-    // List markdown files
-    const files = getMarkdownFiles(DOCS_DIR);
-    if (files.length === 0) {
-      res.end(
-        html(
-          "<h1>Mermaid Server</h1><p>No markdown files found in this directory.</p>",
-        ),
-      );
+  if (pathname === "/" || isDir) {
+    const dirPath = isDir ? filePath : DOCS_DIR;
+    const readmePath = path.join(dirPath, "README.md");
+    const showAll = url.searchParams.get("all") === "true";
+    const isRoot = pathname === "/";
+
+    if (fs.existsSync(readmePath) && !showAll) {
+      const content = fs.readFileSync(readmePath, "utf-8");
+      const title = getH1Title(content) || "README.md";
+      const rendered = `
+        ${nav(true, !isRoot, pathname)}
+        ${renderMarkdown(content)}
+      `;
+      res.end(html(rendered, title));
     } else {
-      const list = files
-        .sort()
-        .map((f) => `<li><a href="/${f}">${f}</a></li>`)
-        .join("");
-      res.end(
-        html(`<h1>Mermaid Server</h1><ul class="file-list">${list}</ul>`),
-      );
+      // List markdown files in current directory only when showAll is active or no README
+      const files = getMarkdownFiles(dirPath, isDir ? pathname.slice(1) : "", !showAll);
+      const folderName = isRoot ? "Root" : path.basename(dirPath);
+      
+      if (files.length === 0) {
+        res.end(
+          html(
+            `${nav(false, !isRoot, pathname)}<h1>${folderName}</h1><p>No markdown files found in this directory.</p>`,
+            folderName
+          ),
+        );
+      } else {
+        const list = files
+          .sort()
+          .map((f) => {
+            const isFolder = f.endsWith("/");
+            const name = isFolder ? f.slice(0, -1).split("/").pop() : path.basename(f);
+            const label = isFolder ? `📁 ${name}` : `📄 ${name}`;
+            return `<li><a href="/${f}">${label}</a></li>`;
+          })
+          .join("");
+        res.end(
+          html(
+            `${nav(false, !isRoot, pathname)}<h1>${folderName}</h1><ul class="file-list">${list}</ul>`,
+            folderName
+          ),
+        );
+      }
     }
   } else if (pathname.endsWith(".md")) {
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, "utf-8");
       const fileName = path.basename(filePath);
+      const title = getH1Title(content) || fileName;
+      const isReadme = fileName.toLowerCase() === "readme.md";
       const rendered = `
-        <div class="back-link"><a href="/">&larr; Back to file list</a></div>
+        ${nav(isReadme, true, pathname)}
         ${renderMarkdown(content)}
       `;
-      res.end(html(rendered, fileName));
+      res.end(html(rendered, title));
     } else {
       res.statusCode = 404;
-      res.end(
-        html(
-          '<h1>404 - File Not Found</h1><p><a href="/">Back to file list</a></p>',
-        ),
-      );
+      res.end(html(`${nav(false, true, pathname)}<h1>404 - File Not Found</h1>`, "404 - Not Found"));
     }
   } else {
     res.statusCode = 404;
-    res.end(
-      html('<h1>404 - Not Found</h1><p><a href="/">Back to file list</a></p>'),
-    );
+    res.end(html(`${nav(false, true, pathname)}<h1>404 - Not Found</h1>`, "404 - Not Found"));
   }
 });
 
