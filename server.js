@@ -1,3 +1,10 @@
+/**
+ * Mermaid Server
+ * 
+ * A local Node.js server to render Markdown files with Mermaid diagrams.
+ * Supports multiple projects, live reload, and persistent configuration.
+ */
+
 const http = require("http");
 const fs = require("fs");
 const path = require("path");
@@ -130,6 +137,8 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
   <title>${title}</title>
   <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
   <script>mermaid.initialize({startOnLoad: true, theme: 'default'});</script>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css">
+  <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
   <style>
     :root {
       --sidebar-width: 260px;
@@ -363,6 +372,14 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
     
     pre { background: #f4f4f4; padding: 1rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border-color); }
     code { background: #f4f4f4; padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; }
+    
+    /* Markdown Elements */
+    table { border-collapse: collapse; width: 100%; margin: 1.5rem 0; font-size: 0.9rem; }
+    th, td { border: 1px solid var(--border-color); padding: 0.75rem; text-align: left; }
+    th { background: var(--sidebar-bg); font-weight: 600; }
+    blockquote { border-left: 4px solid var(--primary-color); margin: 1.5rem 0; padding: 0.5rem 1rem; color: #555; background: #f9f9f9; }
+    img { max-width: 100%; height: auto; border-radius: 4px; }
+    hr { border: 0; border-top: 1px solid var(--border-color); margin: 2rem 0; }
     
     .reload-indicator {
       position: fixed; top: 10px; right: 10px;
@@ -697,6 +714,7 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
       }, { passive: true });
     }
     generateTOC();
+    hljs.highlightAll();
   </script>
 </body>
 </html>
@@ -791,19 +809,38 @@ const server = http.createServer((req, res) => {
       try {
         const data = body ? JSON.parse(body) : {};
         if (pathname === "/api/projects" && req.method === "POST") {
-          const newProject = { id: crypto.randomBytes(4).toString("hex"), name: data.name, path: path.resolve(data.path) };
-          config.projects.push(newProject); saveConfig(); res.end(JSON.stringify(newProject));
+          const newProject = { 
+            id: crypto.randomBytes(4).toString("hex"), 
+            name: data.name, 
+            path: path.resolve(data.path) 
+          };
+          config.projects.push(newProject); 
+          saveConfig(); 
+          res.end(JSON.stringify(newProject));
         } else if (pathname === "/api/settings" && req.method === "PATCH") {
-          config.settings = { ...config.settings, ...data }; saveConfig(); res.end(JSON.stringify(config.settings));
+          config.settings = { ...config.settings, ...data }; 
+          saveConfig(); 
+          res.end(JSON.stringify(config.settings));
         } else if (pathname.startsWith("/api/projects/") && req.method === "PATCH") {
           const id = pathname.split("/").pop();
           const p = config.projects.find(p => p.id === id);
-          if (p) { Object.assign(p, data); if (data.path) p.path = path.resolve(data.path); saveConfig(); res.end(JSON.stringify(p)); }
-          else { res.statusCode = 404; res.end(); }
+          if (p) { 
+            Object.assign(p, data); 
+            if (data.path) p.path = path.resolve(data.path); 
+            saveConfig(); 
+            res.end(JSON.stringify(p)); 
+          } else { 
+            res.statusCode = 404; 
+            res.end(); 
+          }
         } else if (pathname.startsWith("/api/projects/") && req.method === "DELETE") {
           config.projects = config.projects.filter(p => p.id !== pathname.split("/").pop());
-          saveConfig(); res.end(JSON.stringify({ success: true }));
-        } else { res.statusCode = 404; res.end(); }
+          saveConfig(); 
+          res.end(JSON.stringify({ success: true }));
+        } else { 
+          res.statusCode = 404; 
+          res.end(); 
+        }
       } catch (e) { res.statusCode = 400; res.end(JSON.stringify({ error: e.message })); }
     });
     return;
