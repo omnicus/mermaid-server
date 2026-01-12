@@ -907,6 +907,12 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
     });
     modalClose.onclick = () => { modal.style.display = 'none'; };
     modal.onclick = (e) => { if (e.target === modal) modalClose.onclick(); };
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') {
+        if (modal.style.display === 'flex') modalClose.onclick();
+        hideProjectModal();
+      }
+    });
 
     function generateTOC() {
       const headings = document.querySelectorAll('.content-body h2');
