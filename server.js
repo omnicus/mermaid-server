@@ -388,6 +388,9 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
       line-height: 1.7;           /* Improved readability */
       letter-spacing: -0.01em;    /* Slightly tighter for body text */
     }
+    h1, h2, h3, h4, h5, h6 {
+      scroll-margin-top: 5rem;    /* Account for sticky header */
+    }
     h1 { 
       font-size: 2.5rem;          /* 40px */
       font-weight: 800; 
@@ -532,7 +535,7 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
       position: fixed;
       top: 6rem;
       right: 2rem;
-      width: 220px;
+      width: 280px;
       max-height: calc(100vh - 8rem);
       overflow-y: auto;
       padding: 0 1rem;
