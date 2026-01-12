@@ -99,7 +99,15 @@ const renderer = {
       return `<div class="mermaid">${token.text}</div>`;
     }
     const lang = token.lang ? ` class="language-${token.lang}"` : "";
-    return `<pre><code${lang}>${token.text}</code></pre>`;
+    const codeId = crypto.randomBytes(4).toString("hex");
+    return `
+      <div class="code-block-wrapper">
+        <div class="code-block-header">
+          <span class="code-block-lang">${token.lang || "text"}</span>
+          <button class="copy-button" onclick="copyCode('${codeId}')">Copy</button>
+        </div>
+        <pre><code id="code-${codeId}"${lang}>${token.text}</code></pre>
+      </div>`;
   },
   heading(token) {
     const id = slugify(token.text);
@@ -128,6 +136,10 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
       </div>
     `).join("");
 
+  // Create back-button logic that skips anchor jumps
+  const backButtonHtml = `<a href="javascript:void(0)" onclick="goBack()" class="back-button">&larr; Back</a>`;
+  const refinedNav = nav.replace(/<a href="javascript:history\.back\(\)">&larr; Back<\/a>/, backButtonHtml);
+
   return `
 <!DOCTYPE html>
 <html lang="en">
@@ -137,27 +149,39 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
   <title>${title}</title>
   <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
   <script>mermaid.initialize({startOnLoad: true, theme: 'default'});</script>
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
   <style>
     :root {
-      --sidebar-width: 260px;
+      --sidebar-width: 280px;
       --bg-color: #ffffff;
-      --sidebar-bg: #f8f9fa;
-      --border-color: #e9ecef;
-      --primary-color: #0066cc;
-      --text-color: #333;
-      --radius-sm: 4px;
-      --radius-md: 8px;
+      --sidebar-bg: #f9fafb;
+      --border-color: #e5e7eb;
+      --primary-color: #6366f1;
+      --primary-hover: #4f46e5;
+      --text-main: #111827;
+      --text-secondary: #4b5563;
+      --text-muted: #9ca3af;
+      --code-bg: #1f2937;
+      --radius-sm: 6px;
+      --radius-md: 10px;
+      --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
+      --font-sans: ui-sans-serif, system-ui, -apple-system, sans-serif;
+      --font-mono: ui-monospace, 'JetBrains Mono', 'SF Mono', monospace;
     }
+
+    * { box-sizing: border-box; }
+    
     body { 
-      font-family: system-ui, -apple-system, sans-serif; 
+      font-family: var(--font-sans); 
       margin: 0;
       padding: 0;
       display: flex;
       height: 100vh;
-      color: var(--text-color);
+      color: var(--text-main);
+      background: var(--bg-color);
       overflow: hidden;
+      line-height: 1.6;
     }
     
     /* Sidebar */
@@ -168,41 +192,52 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
       border-right: 1px solid var(--border-color);
       display: flex;
       flex-direction: column;
-      transition: margin-left 0.3s ease;
+      transition: margin-left 0.3s cubic-bezier(0.4, 0, 0.2, 1);
       z-index: 1000;
     }
     #sidebar.hidden {
       margin-left: calc(-1 * var(--sidebar-width));
     }
     .sidebar-header {
-      padding: 1rem;
-      padding-left: 4rem; /* Space for burger */
+      padding: 1.5rem 1rem;
+      padding-left: 4.5rem;
       border-bottom: 1px solid var(--border-color);
       display: flex;
       justify-content: space-between;
       align-items: center;
-      min-height: 48px;
+      min-height: 64px;
     }
-    .sidebar-header h2 { margin: 0; font-size: 1.1rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .sidebar-header h2 { 
+      margin: 0; 
+      font-size: 0.875rem; 
+      text-transform: uppercase; 
+      letter-spacing: 0.05em; 
+      color: var(--text-secondary);
+      font-weight: 600;
+    }
     
     .project-list {
       flex: 1;
       overflow-y: auto;
-      padding: 0.5rem 0;
+      padding: 0.75rem 0.5rem;
     }
     .project-item {
       display: flex;
       align-items: center;
-      padding: 0.5rem 1rem;
+      padding: 0.625rem 0.75rem;
       gap: 0.5rem;
       cursor: pointer;
+      border-radius: var(--radius-sm);
+      margin-bottom: 2px;
+      transition: all 0.2s;
     }
-    .project-item:hover { background: #e9ecef; }
+    .project-item:hover { background: #f3f4f6; }
     .project-item.active { 
-      background: #dee2e6; 
-      border-left: 4px solid var(--primary-color);
-      padding-left: calc(1rem - 4px);
+      background: #eef2ff; 
+      color: var(--primary-color);
     }
+    .project-item.active .project-name { font-weight: 600; }
+    
     .project-link { 
       flex: 1; 
       text-decoration: none; 
@@ -210,22 +245,25 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      font-size: 0.9375rem;
     }
-    .project-name { font-weight: 500; }
     .project-actions {
       display: none;
       gap: 4px;
     }
     .project-item:hover .project-actions { display: flex; }
     .project-actions button {
-      background: none;
-      border: none;
+      background: white;
+      border: 1px solid var(--border-color);
       cursor: pointer;
-      padding: 2px 5px;
-      color: #666;
-      border-radius: 3px;
+      padding: 4px;
+      color: var(--text-secondary);
+      border-radius: 4px;
+      line-height: 1;
+      font-size: 0.875rem;
+      box-shadow: var(--shadow-sm);
     }
-    .project-actions button:hover { background: #ced4da; color: #000; }
+    .project-actions button:hover { border-color: var(--primary-color); color: var(--primary-color); }
 
     .sidebar-footer {
       padding: 1rem;
@@ -233,252 +271,351 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
     }
     .btn-add {
       width: 100%;
-      padding: 0.5rem;
+      padding: 0.625rem;
       background: var(--primary-color);
       color: white;
       border: none;
-      border-radius: 4px;
+      border-radius: var(--radius-sm);
       cursor: pointer;
+      font-weight: 500;
+      font-size: 0.875rem;
+      transition: background 0.2s;
     }
+    .btn-add:hover { background: var(--primary-hover); }
 
     /* Main Content */
     #main {
       flex: 1;
       overflow-y: auto;
-      padding: 0 2rem 2rem 2rem;
+      padding: 0;
       position: relative;
       scroll-behavior: smooth;
     }
     .container {
-      max-width: 900px;
+      max-width: 720px;           /* ~65-70 characters per line at 18px */
       margin: 0 auto;
+      padding: 0 2rem;
     }
     
     .content-header {
       position: sticky;
       top: 0;
-      background: rgba(255, 255, 255, 0.95);
-      backdrop-filter: blur(8px);
+      background: rgba(255, 255, 255, 0.85);
+      backdrop-filter: blur(12px);
       z-index: 100;
       padding: 1rem 0;
       border-bottom: 1px solid var(--border-color);
-      margin-bottom: 2rem;
+    }
+    .header-nav {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
 
-    /* Progress Bar */
     .progress-bar {
       position: absolute;
       bottom: -1px;
       left: 0;
       width: 0%;
-      height: 3px;
+      height: 2px;
       background: var(--primary-color);
       transition: width 0.1s;
     }
 
     #sidebar-toggle {
       position: fixed;
-      top: 12px;
-      left: 12px;
+      top: 16px;
+      left: 16px;
       z-index: 2000;
       background: #fff;
       border: 1px solid var(--border-color);
-      border-radius: 4px;
-      width: 32px;
-      height: 32px;
+      border-radius: var(--radius-sm);
+      width: 36px;
+      height: 36px;
       cursor: pointer;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+      box-shadow: var(--shadow-sm);
       display: flex;
       align-items: center;
       justify-content: center;
-      font-size: 1rem;
-      color: #555;
+      transition: all 0.2s;
     }
     #sidebar-toggle:hover {
-      background: #f0f0f0;
-      color: #000;
+      border-color: var(--primary-color);
+      color: var(--primary-color);
     }
 
     .back-link { 
       display: flex; 
-      justify-content: space-between; 
       align-items: center; 
+      gap: 1.5rem; 
     }
     .back-link a {
-      color: var(--primary-color);
+      color: var(--text-secondary);
       text-decoration: none;
-      font-size: 0.9rem;
+      font-size: 0.875rem;
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
     }
-    .back-link a:hover { text-decoration: underline; }
+    .back-link a:hover { color: var(--primary-color); }
 
-    .file-list { list-style: none; padding: 0; margin: 0; }
-    .file-list li { border-bottom: 1px solid #eee; }
+    .file-list { list-style: none; padding: 0; margin: 1rem 0; }
+    .file-list li { margin-bottom: 0.5rem; }
     .file-list a { 
       display: flex; 
       align-items: center; 
       gap: 0.75rem; 
-      padding: 0.75rem 0; 
-      color: inherit; 
+      padding: 0.75rem 1rem; 
+      color: var(--text-main); 
       text-decoration: none;
+      background: #f9fafb;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
     }
-    .file-list a:hover { color: var(--primary-color); }
-    .file-icon { font-size: 1.1rem; }
+    .file-list a:hover { 
+      border-color: var(--primary-color);
+      background: #f5f7ff;
+      color: var(--primary-color);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+    }
 
-    .mermaid { 
-      background: #fafafa; 
-      padding: 1.5rem; 
-      border-radius: var(--radius-md);
+    /* Content Styling - Optimized for Reading */
+    .content-body {
+      padding: 3rem 0;
+      font-size: 1.125rem;        /* 18px - optimal for long-form reading */
+      line-height: 1.7;           /* Improved readability */
+      letter-spacing: -0.01em;    /* Slightly tighter for body text */
+    }
+    h1 { 
+      font-size: 2.5rem;          /* 40px */
+      font-weight: 800; 
+      margin-bottom: 1.5rem; 
+      letter-spacing: -0.03em; 
+      line-height: 1.2;
+    }
+    h2 { 
+      font-size: 1.75rem;         /* 28px - clear hierarchy */
+      font-weight: 700; 
+      margin: 3rem 0 1.25rem;     /* More breathing room above */
+      padding-bottom: 0.5rem; 
+      border-bottom: 1px solid var(--border-color); 
+      line-height: 1.3;
+      letter-spacing: -0.02em;
+    }
+    h3 { 
+      font-size: 1.375rem;        /* 22px */
+      font-weight: 600; 
+      margin: 2.5rem 0 1rem; 
+      line-height: 1.4;
+      letter-spacing: -0.01em;
+    }
+    h4 {
+      font-size: 1.125rem;        /* 18px */
+      font-weight: 600;
+      margin: 2rem 0 0.75rem;
+      line-height: 1.4;
+    }
+    p { 
+      margin-bottom: 1.5rem;      /* More space between paragraphs */
+      color: #374151; 
+    }
+    
+    /* List styling for better readability */
+    ul, ol {
       margin: 1.5rem 0;
+      padding-left: 1.5rem;
+    }
+    li {
+      margin-bottom: 0.5rem;
+      line-height: 1.7;
+    }
+    li > ul, li > ol {
+      margin: 0.5rem 0;
+    }
+
+    /* Code & Mermaid */
+    .mermaid { 
+      background: #fdfdfd; 
+      padding: 2rem; 
+      border-radius: var(--radius-md);
+      margin: 2rem 0;
       overflow-x: auto;
       cursor: pointer;
-      position: relative;
-      transition: box-shadow 0.2s;
+      transition: all 0.2s;
       border: 1px solid var(--border-color);
+      display: flex;
+      justify-content: center;
     }
-    .mermaid:hover { box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
-    .mermaid::after {
-      content: 'Click to expand';
-      position: absolute;
-      top: 8px; right: 8px;
-      font-size: 0.7rem; color: #888;
-      background: white; padding: 2px 6px;
-      border-radius: 3px; opacity: 0;
-      transition: opacity 0.2s;
-    }
-    .mermaid:hover::after { opacity: 1; }
-    
-    .diagram-modal {
-      display: none;
-      position: fixed;
-      top: 0; left: 0;
-      width: 100vw; height: 100vh;
-      background: rgba(0,0,0,0.85);
-      z-index: 3000;
-      justify-content: center; align-items: center;
-      padding: 2rem; box-sizing: border-box;
-    }
-    .diagram-modal.active { display: flex; }
-    .diagram-modal-content {
-      background: white; border-radius: var(--radius-md);
-      padding: 2rem; width: 90vw; max-height: 90vh;
-      overflow: auto; position: relative;
-    }
-    .diagram-modal-close {
-      position: absolute; top: 10px; right: 10px;
-      background: #f44336; color: white; border: none;
-      width: 32px; height: 32px; border-radius: 50%;
-      cursor: pointer; font-size: 1.2rem; z-index: 3001;
+    .mermaid:hover { border-color: var(--primary-color); box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+
+    .code-block-wrapper {
+      margin: 1.5rem -3rem;       /* Extend beyond container */
+      border-radius: var(--radius-md);
+      overflow: hidden;
+      background: var(--code-bg);
+      border: 1px solid #374151;
     }
     
-    pre { background: #f4f4f4; padding: 1rem; border-radius: 8px; overflow-x: auto; border: 1px solid var(--border-color); }
-    code { background: #f4f4f4; padding: 0.2rem 0.4rem; border-radius: 4px; font-family: monospace; }
+    @media (max-width: 800px) {
+      .code-block-wrapper {
+        margin-left: -1.5rem;
+        margin-right: -1.5rem;
+        border-radius: 0;
+      }
+    }
+    .code-block-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      background: #111827;
+      border-bottom: 1px solid #374151;
+    }
+    .code-block-lang { color: #9ca3af; font-size: 0.75rem; font-family: var(--font-mono); font-weight: 600; text-transform: uppercase; }
+    .copy-button {
+      background: #374151;
+      border: none;
+      color: #e5e7eb;
+      font-size: 0.75rem;
+      padding: 2px 8px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .copy-button:hover { background: var(--primary-color); color: white; }
+    pre { margin: 0; padding: 1.25rem; overflow-x: auto; font-family: var(--font-mono); font-size: 0.9rem; }
+    code { font-family: var(--font-mono); background: #f3f4f6; padding: 0.2rem 0.4rem; border-radius: 4px; font-size: 0.85em; }
+    pre code { background: none; padding: 0; font-size: inherit; color: #e5e7eb; }
     
     /* Markdown Elements */
-    table { border-collapse: collapse; width: 100%; margin: 1.5rem 0; font-size: 0.9rem; }
-    th, td { border: 1px solid var(--border-color); padding: 0.75rem; text-align: left; }
-    th { background: var(--sidebar-bg); font-weight: 600; }
-    blockquote { border-left: 4px solid var(--primary-color); margin: 1.5rem 0; padding: 0.5rem 1rem; color: #555; background: #f9f9f9; }
-    img { max-width: 100%; height: auto; border-radius: 4px; }
-    hr { border: 0; border-top: 1px solid var(--border-color); margin: 2rem 0; }
+    table { border-collapse: collapse; width: 100%; margin: 2rem 0; font-size: 0.9rem; }
+    th, td { border: 1px solid var(--border-color); padding: 0.75rem 1rem; text-align: left; }
+    th { background: #f9fafb; font-weight: 600; color: var(--text-secondary); }
+    blockquote { 
+      border-left: 4px solid var(--primary-color); 
+      margin: 2rem 0; 
+      padding: 1rem 1.5rem; 
+      color: var(--text-secondary); 
+      background: #f5f7ff; 
+      border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+      font-size: 1.0625rem;       /* Slightly smaller than body */
+      line-height: 1.65;
+    }
+    blockquote p:last-child {
+      margin-bottom: 0;
+    }
+    img { max-width: 100%; height: auto; border-radius: var(--radius-sm); border: 1px solid var(--border-color); }
     
     .reload-indicator {
-      position: fixed; top: 10px; right: 10px;
-      background: #4caf50; color: white;
-      padding: 0.3rem 0.6rem; border-radius: 4px;
-      font-size: 0.8rem; opacity: 0; transition: opacity 0.3s;
-      z-index: 2000;
+      position: fixed; top: 16px; right: 16px;
+      background: #10b981; color: white;
+      padding: 0.5rem 1rem; border-radius: 20px;
+      font-size: 0.75rem; font-weight: 600; opacity: 0; transition: all 0.3s;
+      z-index: 2000; box-shadow: 0 4px 6px -1px rgb(0 0 0 / 0.1);
+      transform: translateY(-10px);
     }
-    .reload-indicator.show { opacity: 1; }
+    .reload-indicator.show { opacity: 1; transform: translateY(0); }
 
-    h1, h2, h3, h4, h5, h6 { position: relative; }
     .heading-anchor {
       position: absolute;
-      left: -1.5rem;
-      top: 50%;
-      transform: translateY(-50%);
-      color: #ccc;
+      left: -1.75rem;
+      color: var(--text-muted);
       opacity: 0;
-      font-weight: 400;
       text-decoration: none;
-      transition: opacity 0.15s ease;
+      transition: opacity 0.2s;
     }
-    h1:hover .heading-anchor, h2:hover .heading-anchor, h3:hover .heading-anchor, 
-    h4:hover .heading-anchor, h5:hover .heading-anchor, h6:hover .heading-anchor { opacity: 1; }
-    .heading-anchor:hover { color: var(--primary-color); }
+    h1:hover .heading-anchor, h2:hover .heading-anchor, h3:hover .heading-anchor { opacity: 1; }
 
     .toc-sidebar {
       position: fixed;
       top: 6rem;
       right: 2rem;
-      width: 200px;
+      width: 220px;
       max-height: calc(100vh - 8rem);
       overflow-y: auto;
-      padding: 1rem;
-      background: var(--sidebar-bg);
-      border-radius: var(--radius-md);
-      border: 1px solid var(--border-color);
-      font-size: 0.85rem;
-      opacity: 0;
-      transform: translateX(10px);
-      animation: tocFadeIn 0.3s ease forwards;
+      padding: 0 1rem;
+      font-size: 0.875rem;
     }
-    @keyframes tocFadeIn { to { opacity: 1; transform: translateX(0); } }
-    .toc-title { font-weight: 600; margin-bottom: 0.75rem; font-size: 0.75rem; text-transform: uppercase; color: #666; }
-    .toc-list { list-style: none; padding: 0; margin: 0; }
+    
+    /* Ensure content doesn't overlap with TOC */
+    #main .container {
+      margin-right: auto;
+      margin-left: auto;
+    }
+    
+    @media (min-width: 1400px) {
+      #main .container {
+        margin-left: calc(50% - 360px - 140px); /* Shift left to make room for TOC */
+        margin-right: calc(50% - 360px + 140px);
+      }
+    }
+    .toc-title { font-weight: 700; margin-bottom: 1rem; font-size: 0.75rem; text-transform: uppercase; color: var(--text-muted); letter-spacing: 0.05em; }
+    .toc-list { list-style: none; padding: 0; margin: 0; border-left: 1px solid var(--border-color); }
     .toc-list a {
       display: block;
-      padding: 0.25rem 0;
-      color: #666;
+      padding: 0.375rem 0 0.375rem 1rem;
+      color: var(--text-secondary);
       text-decoration: none;
+      margin-left: -1px;
       border-left: 2px solid transparent;
-      padding-left: 0.75rem;
-      transition: all 0.15s;
+      transition: all 0.2s;
     }
     .toc-list a:hover { color: var(--primary-color); }
     .toc-list a.active { color: var(--primary-color); border-left-color: var(--primary-color); font-weight: 500; }
-    .toc-h3 { padding-left: 1.5rem !important; }
-    .toc-h4 { padding-left: 2.25rem !important; }
 
-    @media (max-width: 1300px) { .toc-sidebar { display: none; } }
+    @media (max-width: 1200px) { .toc-sidebar { display: none; } }
+    
+    @media (max-width: 1200px) {
+      #main .container {
+        margin-left: auto;
+        margin-right: auto;
+      }
+    }
 
     .modal-overlay {
       display: none;
       position: fixed;
       top: 0; left: 0; width: 100%; height: 100%;
-      background: rgba(0,0,0,0.5);
+      background: rgba(0,0,0,0.4);
+      backdrop-filter: blur(4px);
       z-index: 4000;
       justify-content: center; align-items: center;
     }
     .modal-overlay.active { display: flex; }
     .modal {
-      background: white; padding: 2rem; border-radius: 8px;
-      width: 450px; box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+      background: white; padding: 2rem; border-radius: var(--radius-md);
+      width: 480px; box-shadow: 0 20px 25px -5px rgb(0 0 0 / 0.1);
     }
-    .form-group { margin-bottom: 1rem; }
-    .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 500; }
-    .form-group input { width: 100%; padding: 0.5rem; box-sizing: border-box; border: 1px solid #ccc; border-radius: 4px; }
-    .modal-actions { display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.5rem; }
-    .btn { padding: 0.5rem 1rem; border: none; border-radius: 4px; cursor: pointer; }
+    .form-group { margin-bottom: 1.25rem; }
+    .form-group label { display: block; margin-bottom: 0.5rem; font-weight: 600; font-size: 0.875rem; }
+    .form-group input { width: 100%; padding: 0.625rem; border: 1px solid var(--border-color); border-radius: var(--radius-sm); font-family: inherit; }
+    .form-group input:focus { outline: none; border-color: var(--primary-color); ring: 2px solid #eef2ff; }
+    .modal-actions { display: flex; justify-content: flex-end; gap: 0.75rem; margin-top: 2rem; }
+    .btn { padding: 0.625rem 1.25rem; border: 1px solid transparent; border-radius: var(--radius-sm); cursor: pointer; font-weight: 500; font-size: 0.875rem; }
     .btn-primary { background: var(--primary-color); color: white; }
-    .btn-secondary { background: #eee; }
+    .btn-secondary { background: white; border-color: var(--border-color); color: var(--text-secondary); }
+    .btn:hover { opacity: 0.9; }
 
     .browser-container {
       border: 1px solid var(--border-color);
-      border-radius: 4px;
-      max-height: 200px;
+      border-radius: var(--radius-sm);
+      max-height: 240px;
       overflow-y: auto;
       margin-top: 0.5rem;
-      background: #fff;
+      background: #fdfdfd;
     }
     .browser-item {
-      padding: 6px 8px;
+      padding: 8px 12px;
       cursor: pointer;
       display: flex;
       align-items: center;
-      gap: 6px;
-      font-size: 0.9rem;
+      gap: 8px;
+      font-size: 0.875rem;
+      border-bottom: 1px solid #f3f4f6;
     }
-    .browser-item:hover { background: #f0f0f0; }
+    .browser-item:hover { background: #f3f4f6; color: var(--primary-color); }
   </style>
 </head>
 <body>
@@ -494,40 +631,52 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
     </div>
   </aside>
 
-  <button id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle Sidebar">☰</button>
+  <button id="sidebar-toggle" onclick="toggleSidebar()" title="Toggle Sidebar">
+    <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16m-7 6h7"></path></svg>
+  </button>
 
   <main id="main">
-    ${nav ? `<header class="content-header"><div class="container">${nav}</div><div class="progress-bar" id="progress-bar"></div></header>` : ''}
-    <div class="container" style="${nav ? '' : 'padding-top: 3rem;'}">
-      <div class="reload-indicator" id="reload-indicator">Reloaded</div>
-      ${content}
+    <header class="content-header">
+      <div class="container">
+        <div class="header-nav">
+          <div class="back-link">${refinedNav || '<span style="font-weight:600; font-size:0.875rem; color:#9ca3af;">DASHBOARD</span>'}</div>
+          <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;" id="scroll-status">0% READ</div>
+        </div>
+      </div>
+      <div class="progress-bar" id="progress-bar"></div>
+    </header>
+    <div class="container">
+      <div class="content-body">
+        <div class="reload-indicator" id="reload-indicator">Changes Detected • Reloading</div>
+        ${content}
+      </div>
     </div>
   </main>
 
-  <div class="diagram-modal" id="diagram-modal">
-    <button class="diagram-modal-close" id="modal-close">&times;</button>
-    <div class="diagram-modal-content" id="modal-content"></div>
+  <div class="diagram-modal" id="diagram-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.85); z-index:3000; justify-content:center; align-items:center; padding:2rem; box-sizing:border-box;">
+    <button id="modal-close" style="position:absolute; top:10px; right:10px; background:#f44336; color:white; border:none; width:32px; height:32px; border-radius:50%; cursor:pointer; font-size:1.2rem; z-index:3001;">&times;</button>
+    <div id="modal-content" style="background:white; border-radius:var(--radius-md); padding:2rem; width:90vw; max-height:90vh; overflow:auto; position:relative;"></div>
   </div>
 
   <div class="modal-overlay" id="project-modal">
     <div class="modal">
-      <h3 id="modal-title">Add Project</h3>
+      <h3 style="margin-top:0;">Project Configuration</h3>
       <input type="hidden" id="project-id">
       <div class="form-group">
         <label for="project-name-input">Project Name</label>
-        <input type="text" id="project-name-input" placeholder="e.g. My Documentation">
+        <input type="text" id="project-name-input" placeholder="e.g. API Documentation">
       </div>
       <div class="form-group">
         <label for="project-path-input">Absolute Path</label>
         <div style="display: flex; gap: 0.5rem;">
-          <input type="text" id="project-path-input" placeholder="/Users/me/docs" style="flex: 1;">
-          <button class="btn btn-secondary" onclick="toggleBrowser()" style="padding: 0.5rem;">Browse</button>
+          <input type="text" id="project-path-input" placeholder="/Users/dev/project" style="flex: 1;">
+          <button class="btn btn-secondary" onclick="toggleBrowser()" style="padding: 0 1rem;">Browse</button>
         </div>
         <div id="file-browser" class="browser-container" style="display: none;"></div>
       </div>
       <div class="modal-actions">
         <button class="btn btn-secondary" onclick="hideProjectModal()">Cancel</button>
-        <button class="btn btn-primary" onclick="saveProject()">Save</button>
+        <button class="btn btn-primary" onclick="saveProject()">Save Project</button>
       </div>
     </div>
   </div>
@@ -535,20 +684,86 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
   <script>
     const projectId = ${projectId ? `'${projectId}'` : 'null'};
     const mainEl = document.getElementById('main');
+    let evtSource = null;
     
+    // Track page navigations (excluding hash changes) using sessionStorage
+    const NAV_HISTORY_KEY = 'mermaid_nav_history';
+    
+    function getNavHistory() {
+      try {
+        return JSON.parse(sessionStorage.getItem(NAV_HISTORY_KEY)) || [];
+      } catch { return []; }
+    }
+    
+    function saveNavHistory(history) {
+      sessionStorage.setItem(NAV_HISTORY_KEY, JSON.stringify(history));
+    }
+    
+    // Record current page on load (pathname + search, excluding hash)
+    (function recordPageVisit() {
+      const currentPage = window.location.pathname + window.location.search;
+      const history = getNavHistory();
+      
+      // Only add if different from the last entry (avoid duplicates from hash nav)
+      if (history.length === 0 || history[history.length - 1] !== currentPage) {
+        history.push(currentPage);
+        // Keep only last 50 entries
+        if (history.length > 50) history.shift();
+        saveNavHistory(history);
+      }
+    })();
+    
+    // Custom Back function that ignores anchor jumps and navigates to previous page
+    function goBack() {
+      // Close SSE connection before navigating
+      if (typeof evtSource !== 'undefined' && evtSource) {
+        evtSource.close();
+      }
+      
+      const history = getNavHistory();
+      const currentPage = window.location.pathname + window.location.search;
+      
+      // Remove current page from history
+      while (history.length > 0 && history[history.length - 1] === currentPage) {
+        history.pop();
+      }
+      
+      if (history.length > 0) {
+        const previousPage = history[history.length - 1];
+        // Don't remove it yet - let the next page load handle that
+        saveNavHistory(history);
+        window.location.href = previousPage;
+      } else {
+        // No history, go to project root or home
+        if (projectId) {
+          window.location.href = '/p/' + projectId + '/';
+        } else {
+          window.location.href = '/';
+        }
+      }
+    }
+
+    function copyCode(id) {
+      const code = document.getElementById('code-' + id).innerText;
+      navigator.clipboard.writeText(code);
+      const btn = event.target;
+      const original = btn.innerText;
+      btn.innerText = 'Copied!';
+      btn.style.background = '#10b981';
+      setTimeout(() => { btn.innerText = original; btn.style.background = ''; }, 2000);
+    }
+
     function toggleSidebar() {
       const sidebar = document.getElementById('sidebar');
       sidebar.classList.toggle('hidden');
-      const isSticky = !sidebar.classList.contains('hidden');
       fetch('/api/settings', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ sidebarSticky: isSticky })
+        body: JSON.stringify({ sidebarSticky: !sidebar.classList.contains('hidden') })
       });
     }
 
     function showAddProject() {
-      document.getElementById('modal-title').innerText = 'Add Project';
       document.getElementById('project-id').value = '';
       document.getElementById('project-name-input').value = '';
       document.getElementById('project-path-input').value = '';
@@ -561,9 +776,7 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
 
     async function renameProject(id, currentName) {
       const name = prompt('Rename project to:', currentName);
-      if (name && name !== currentName) {
-        await updateProject(id, { name });
-      }
+      if (name && name !== currentName) await updateProject(id, { name });
     }
 
     async function updateProject(id, data) {
@@ -578,10 +791,7 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
     async function deleteProject(id) {
       if (!confirm('Remove this project?')) return;
       const res = await fetch('/api/projects/' + id, { method: 'DELETE' });
-      if (res.ok) {
-        if (projectId === id) window.location.href = '/';
-        else location.reload();
-      }
+      if (res.ok) location.href = '/';
     }
 
     async function saveProject() {
@@ -589,8 +799,8 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
       const name = document.getElementById('project-name-input').value;
       const path = document.getElementById('project-path-input').value;
       if (!name || !path) return alert('Name and Path are required');
-      const res = await fetch('/api/projects', {
-        method: 'POST',
+      const res = await fetch('/api/projects' + (id ? '/' + id : ''), {
+        method: id ? 'PATCH' : 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, path })
       });
@@ -628,28 +838,52 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
         item.onclick = () => browseTo(entry.path);
         container.appendChild(item);
       });
-      const nameInput = document.getElementById('project-name-input');
-      if (!nameInput.value) {
-        const parts = data.currentPath.split(/[\\\\/]/);
-        nameInput.value = parts.pop() || 'New Project';
-      }
     }
 
     if (projectId) {
-      let evtSource;
       function connectSSE() {
-        if (evtSource) evtSource.close();
+        if (evtSource) {
+          evtSource.close();
+          evtSource = null;
+        }
+        
         evtSource = new EventSource('/__reload?projectId=' + projectId);
+        
         evtSource.onmessage = (e) => {
           if (e.data === 'reload') {
             document.getElementById('reload-indicator').classList.add('show');
             evtSource.close();
-            setTimeout(() => location.reload(), 300);
+            evtSource = null;
+            setTimeout(() => location.reload(), 500);
+          }
+        };
+        
+        evtSource.onerror = () => {
+          // Connection lost, close and don't reconnect automatically
+          if (evtSource) {
+            evtSource.close();
+            evtSource = null;
           }
         };
       }
+      
       connectSSE();
-      window.addEventListener('beforeunload', () => { if (evtSource) evtSource.close(); });
+      
+      // Close connection when navigating away
+      window.addEventListener('beforeunload', () => {
+        if (evtSource) {
+          evtSource.close();
+          evtSource = null;
+        }
+      });
+      
+      // Also close on pagehide (for bfcache)
+      window.addEventListener('pagehide', () => {
+        if (evtSource) {
+          evtSource.close();
+          evtSource = null;
+        }
+      });
     }
 
     const modal = document.getElementById('diagram-modal');
@@ -657,8 +891,7 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
     const modalClose = document.getElementById('modal-close');
     function openModal(diagramHtml) {
       modalContent.innerHTML = diagramHtml;
-      modal.classList.add('active');
-      document.body.style.overflow = 'hidden';
+      modal.style.display = 'flex';
       const svg = modalContent.querySelector('svg');
       if (svg) {
         svg.removeAttribute('width'); svg.removeAttribute('height');
@@ -666,53 +899,45 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
       }
     }
     document.addEventListener('click', (e) => {
-      const mermaidEl = e.target.closest('.mermaid');
-      if (mermaidEl && !modal.classList.contains('active')) openModal(mermaidEl.innerHTML);
+      const mermaid = e.target.closest('.mermaid');
+      if (mermaid) openModal(mermaid.innerHTML);
     });
-    modalClose.onclick = () => { modal.classList.remove('active'); document.body.style.overflow = ''; };
+    modalClose.onclick = () => { modal.style.display = 'none'; };
     modal.onclick = (e) => { if (e.target === modal) modalClose.onclick(); };
-    document.onkeydown = (e) => { if (e.key === 'Escape') modalClose.onclick(); };
 
     function generateTOC() {
-      const headings = document.querySelectorAll('h2, h3, h4');
-      if (headings.length < 3) return;
+      const headings = document.querySelectorAll('.content-body h2');
+      if (headings.length < 2) return;
       const toc = document.createElement('nav');
       toc.className = 'toc-sidebar';
       toc.innerHTML = '<div class="toc-title">On this page</div><ul class="toc-list"></ul>';
       const list = toc.querySelector('ul');
       headings.forEach(h => {
-        if (!h.id) return;
-        const li = document.createElement('li');
         const a = document.createElement('a');
         a.href = '#' + h.id;
         a.textContent = h.textContent.replace(/^#/, '');
-        a.className = 'toc-' + h.tagName.toLowerCase();
         a.dataset.target = h.id;
+        const li = document.createElement('li');
         li.appendChild(a);
         list.appendChild(li);
       });
       document.body.appendChild(toc);
       const tocLinks = toc.querySelectorAll('a');
-      function updateActiveTOC() {
-        let current = '';
-        headings.forEach(h => {
-          if (h.getBoundingClientRect().top <= 120) current = h.id;
-        });
-        tocLinks.forEach(link => link.classList.toggle('active', link.dataset.target === current));
-      }
-      mainEl.addEventListener('scroll', updateActiveTOC, { passive: true });
-      updateActiveTOC();
-    }
-
-    const progressBar = document.getElementById('progress-bar');
-    if (progressBar) {
       mainEl.addEventListener('scroll', () => {
-        const st = mainEl.scrollTop;
-        const sh = mainEl.scrollHeight - mainEl.clientHeight;
-        const percent = sh > 0 ? (st / sh) * 100 : 0;
-        progressBar.style.width = percent + '%';
+        let current = '';
+        headings.forEach(h => { if (h.getBoundingClientRect().top <= 100) current = h.id; });
+        tocLinks.forEach(link => link.classList.toggle('active', link.dataset.target === current));
       }, { passive: true });
     }
+
+    mainEl.addEventListener('scroll', () => {
+      const st = mainEl.scrollTop;
+      const sh = mainEl.scrollHeight - mainEl.clientHeight;
+      const percent = sh > 0 ? (st / sh) * 100 : 0;
+      document.getElementById('progress-bar').style.width = percent + '%';
+      document.getElementById('scroll-status').innerText = Math.round(percent) + '% READ';
+    }, { passive: true });
+
     generateTOC();
     hljs.highlightAll();
   </script>
@@ -766,7 +991,12 @@ const server = http.createServer((req, res) => {
   if (pathname === "/__reload") {
     const projectId = url.searchParams.get("projectId");
     if (!projectId) return res.end();
-    res.writeHead(200, { "Content-Type": "text/event-stream", "Cache-Control": "no-cache", "Connection": "keep-alive" });
+    res.writeHead(200, {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache",
+      "Connection": "keep-alive",
+      "Access-Control-Allow-Origin": "*",
+    });
     res.write("data: connected\n\n");
     const heartbeat = setInterval(() => {
       if (res.writableEnded || res.finished) { clearInterval(heartbeat); return; }
@@ -788,9 +1018,12 @@ const server = http.createServer((req, res) => {
       clearInterval(heartbeat);
     };
     req.on("close", cleanup);
+    res.on("close", cleanup);
+    res.on("error", cleanup);
     return;
   }
   if (pathname.startsWith("/api/")) {
+    res.setHeader("Connection", "close");
     res.setHeader("Content-Type", "application/json");
     if (pathname === "/api/browse") {
       const targetPath = url.searchParams.get("path") || os.homedir();
@@ -846,11 +1079,13 @@ const server = http.createServer((req, res) => {
     return;
   }
   if (pathname === "/") {
+    res.setHeader("Connection", "close");
     res.end(html(`<h1>Mermaid Server</h1><p>Select a project from the sidebar.</p><ul class="file-list">${config.projects.map(p => `<li><a href="/p/${p.id}/">📁 <span>${p.name}</span></a></li>`).join("")}</ul>`, "Mermaid Server", null, ""));
     return;
   }
   const projectMatch = pathname.match(/^\/p\/([^/]+)(\/.*)?/);
   if (projectMatch) {
+    res.setHeader("Connection", "close");
     const projectId = projectMatch[1];
     const subPath = decodeURIComponent(projectMatch[2] || "/");
     const project = config.projects.find(p => p.id === projectId);
@@ -866,7 +1101,7 @@ const server = http.createServer((req, res) => {
       if (fs.existsSync(readmePath) && !showAll) {
         const content = fs.readFileSync(readmePath, "utf-8");
         const title = getH1Title(content) || "README.md";
-        const nav = `<div class="back-link"><a href="javascript:history.back()">&larr; Back</a><a href="?all=true">Show all files</a></div>`;
+        const nav = `<div class="back-link"><a href="javascript:history.back()">&larr; Back</a><span style="color:var(--border-color)">|</span><a href="?all=true">Show all files</a></div>`;
         res.end(html(marked(content), title, projectId, nav));
       } else {
         const files = getMarkdownFiles(fullPath, subPath === "/" ? "" : subPath, !showAll);
@@ -888,7 +1123,11 @@ const server = http.createServer((req, res) => {
       res.setHeader("Content-Type", MIME_TYPES[ext] || "application/octet-stream");
       fs.createReadStream(fullPath).pipe(res);
     }
-  } else { res.statusCode = 404; res.end(html("<h1>404 - Not Found</h1>")); }
+  } else { 
+    res.setHeader("Connection", "close");
+    res.statusCode = 404; 
+    res.end(html("<h1>404 - Not Found</h1>")); 
+  }
 });
 
 server.listen(PORT, () => {
