@@ -12,23 +12,12 @@ A local Node.js server for rendering Markdown files with Mermaid diagrams. Featu
 - **Click to Expand** - Fullscreen view for diagrams
 - **Reading Progress** - Shows scroll progress and percentage read
 
-## Installation
+## Quick Start
 
 ```bash
+git clone https://github.com/omnicus/mermaid-md.git
+cd mermaid-md
 npm install
-```
-
-## Usage
-
-Start the server:
-
-```bash
-npm start
-```
-
-Or specify a directory to add as a project:
-
-```bash
 node server.js /path/to/your/docs
 ```
 
