@@ -32,3 +32,6 @@ script_only.js
 
 # OpenCode config
 .opencode/
+
+# Project rules (local)
+RULES.md
