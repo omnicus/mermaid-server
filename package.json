@@ -1,5 +1,5 @@
 {
-  "name": "mermaid-server",
+  "name": "mermaid-md",
   "version": "1.0.0",
   "description": "Local server for rendering Markdown files with Mermaid diagrams",
   "main": "server.js",

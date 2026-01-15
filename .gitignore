@@ -25,3 +25,10 @@ npm-debug.log*
 
 # Optional eslint cache
 .eslintcache
+
+# Local dev scripts
+script_debug.js
+script_only.js
+
+# OpenCode config
+.opencode/
