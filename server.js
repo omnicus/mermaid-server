@@ -567,6 +567,7 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
     }
     .toc-list a:hover { color: var(--primary-color); }
     .toc-list a.active { color: var(--primary-color); border-left-color: var(--primary-color); font-weight: 500; }
+    .toc-list a.toc-h3 { padding-left: 2rem; font-size: 0.8125rem; }
 
     @media (max-width: 1200px) { .toc-sidebar { display: none; } }
     
@@ -915,7 +916,7 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
     });
 
     function generateTOC() {
-      const headings = document.querySelectorAll('.content-body h2');
+      const headings = document.querySelectorAll('.content-body h2, .content-body h3');
       if (headings.length < 2) return;
       const toc = document.createElement('nav');
       toc.className = 'toc-sidebar';
@@ -926,6 +927,7 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
         a.href = '#' + h.id;
         a.textContent = h.textContent.replace(/^#/, '');
         a.dataset.target = h.id;
+        if (h.tagName === 'H3') a.classList.add('toc-h3');
         const li = document.createElement('li');
         li.appendChild(a);
         list.appendChild(li);
