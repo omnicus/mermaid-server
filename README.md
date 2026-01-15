@@ -18,10 +18,16 @@ A local Node.js server for rendering Markdown files with Mermaid diagrams. Featu
 git clone https://github.com/omnicus/mermaid-md.git
 cd mermaid-md
 npm install
-node server.js /path/to/your/docs
+npm start
 ```
 
 Then open http://localhost:4000 in your browser.
+
+To add a docs folder directly on startup:
+
+```bash
+node server.js /path/to/your/docs
+```
 
 ## Adding Projects
 
