@@ -93,6 +93,15 @@ const slugify = (text) => {
     .replace(/-+/g, '-'); // Remove consecutive hyphens
 };
 
+const escapeHtml = (text) => {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+};
+
 const renderer = {
   code(token) {
     if (token.lang === "mermaid") {
@@ -100,13 +109,14 @@ const renderer = {
     }
     const lang = token.lang ? ` class="language-${token.lang}"` : "";
     const codeId = crypto.randomBytes(4).toString("hex");
+    const escapedCode = escapeHtml(token.text);
     return `
       <div class="code-block-wrapper">
         <div class="code-block-header">
           <span class="code-block-lang">${token.lang || "text"}</span>
           <button class="copy-button" onclick="copyCode('${codeId}')">Copy</button>
         </div>
-        <pre><code id="code-${codeId}"${lang}>${token.text}</code></pre>
+        <pre><code id="code-${codeId}"${lang}>${escapedCode}</code></pre>
       </div>`;
   },
   heading(token) {
@@ -1048,7 +1058,9 @@ const server = http.createServer((req, res) => {
       return;
     }
     let body = "";
-    req.on("data", chunk => body += chunk);
+    req.on("data", chunk => {
+      body += chunk;
+    });
     req.on("end", () => {
       try {
         const data = body ? JSON.parse(body) : {};
