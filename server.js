@@ -1,43 +1,43 @@
 /**
  * Mermaid Server
- * 
+ *
  * A local Node.js server to render Markdown files with Mermaid diagrams.
  * Supports multiple projects, live reload, and persistent configuration.
  */
 
-const http = require("http");
-const fs = require("fs");
-const path = require("path");
-const os = require("os");
-const crypto = require("crypto");
-const { marked } = require("marked");
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const crypto = require('crypto');
+const { marked } = require('marked');
 
 const PORT = process.env.PORT || 4000;
-const CONFIG_PATH = path.join(os.homedir(), ".mermaid-server.json");
+const CONFIG_PATH = path.join(os.homedir(), '.mermaid-server.json');
 
 // Mime types for static assets
 const MIME_TYPES = {
-  ".html": "text/html",
-  ".js": "text/javascript",
-  ".css": "text/css",
-  ".json": "application/json",
-  ".png": "image/png",
-  ".jpg": "image/jpg",
-  ".gif": "image/gif",
-  ".svg": "image/svg+xml",
-  ".wav": "audio/wav",
-  ".mp4": "video/mp4",
-  ".woff": "application/font-woff",
-  ".ttf": "application/font-ttf",
-  ".eot": "application/vnd.ms-fontobject",
-  ".otf": "application/font-otf",
-  ".wasm": "application/wasm",
+  '.html': 'text/html',
+  '.js': 'text/javascript',
+  '.css': 'text/css',
+  '.json': 'application/json',
+  '.png': 'image/png',
+  '.jpg': 'image/jpg',
+  '.gif': 'image/gif',
+  '.svg': 'image/svg+xml',
+  '.wav': 'audio/wav',
+  '.mp4': 'video/mp4',
+  '.woff': 'application/font-woff',
+  '.ttf': 'application/font-ttf',
+  '.eot': 'application/vnd.ms-fontobject',
+  '.otf': 'application/font-otf',
+  '.wasm': 'application/wasm',
 };
 
 // State
 let config = {
   projects: [],
-  settings: { sidebarSticky: true }
+  settings: { sidebarSticky: true },
 };
 
 const clients = new Map(); // projectId -> Set of res objects
@@ -47,10 +47,10 @@ const watchers = new Map(); // projectId -> fs.FSWatcher
 const loadConfig = () => {
   if (fs.existsSync(CONFIG_PATH)) {
     try {
-      const data = JSON.parse(fs.readFileSync(CONFIG_PATH, "utf-8"));
+      const data = JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf-8'));
       config = { ...config, ...data };
     } catch (e) {
-      console.error("Failed to load config:", e.message);
+      console.error('Failed to load config:', e.message);
     }
   }
 };
@@ -59,7 +59,7 @@ const saveConfig = () => {
   try {
     fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2));
   } catch (e) {
-    console.error("Failed to save config:", e.message);
+    console.error('Failed to save config:', e.message);
   }
 };
 
@@ -70,12 +70,12 @@ const argPath = process.argv[2];
 if (argPath) {
   const absolutePath = path.resolve(argPath);
   if (fs.existsSync(absolutePath) && fs.statSync(absolutePath).isDirectory()) {
-    const existing = config.projects.find(p => p.path === absolutePath);
+    const existing = config.projects.find((p) => p.path === absolutePath);
     if (!existing) {
       config.projects.push({
-        id: crypto.randomBytes(4).toString("hex"),
-        name: path.basename(absolutePath) || "Default",
-        path: absolutePath
+        id: crypto.randomBytes(4).toString('hex'),
+        name: path.basename(absolutePath) || 'Default',
+        path: absolutePath,
       });
       saveConfig();
     }
@@ -95,25 +95,25 @@ const slugify = (text) => {
 
 const escapeHtml = (text) => {
   return text
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;")
-    .replace(/'/g, "&#39;");
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 };
 
 const renderer = {
   code(token) {
-    if (token.lang === "mermaid") {
+    if (token.lang === 'mermaid') {
       return `<div class="mermaid">${token.text}</div>`;
     }
-    const lang = token.lang ? ` class="language-${token.lang}"` : "";
-    const codeId = crypto.randomBytes(4).toString("hex");
+    const lang = token.lang ? ` class="language-${token.lang}"` : '';
+    const codeId = crypto.randomBytes(4).toString('hex');
     const escapedCode = escapeHtml(token.text);
     return `
       <div class="code-block-wrapper">
         <div class="code-block-header">
-          <span class="code-block-lang">${token.lang || "text"}</span>
+          <span class="code-block-lang">${token.lang || 'text'}</span>
           <button class="copy-button" onclick="copyCode('${codeId}')">Copy</button>
         </div>
         <pre><code id="code-${codeId}"${lang}>${escapedCode}</code></pre>
@@ -132,9 +132,15 @@ const getH1Title = (md) => {
   return match ? match[1].trim() : null;
 };
 
-const html = (content, title = "Mermaid Server", projectId = null, nav = "") => {
+const html = (
+  content,
+  title = 'Mermaid Server',
+  projectId = null,
+  nav = '',
+) => {
   const projectListHtml = config.projects
-    .map(p => `
+    .map(
+      (p) => `
       <div class="project-item ${p.id === projectId ? 'active' : ''}" data-id="${p.id}">
         <a href="/p/${p.id}/" class="project-link">
           <span class="project-name" title="${p.path}">${p.name}</span>
@@ -144,11 +150,16 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
           <button onclick="deleteProject('${p.id}')" title="Remove">×</button>
         </div>
       </div>
-    `).join("");
+    `,
+    )
+    .join('');
 
   // Create back-button logic that skips anchor jumps
   const backButtonHtml = `<a href="javascript:void(0)" onclick="goBack()" class="back-button">&larr; Back</a>`;
-  const refinedNav = nav.replace(/<a href="javascript:history\.back\(\)">&larr; Back<\/a>/, backButtonHtml);
+  const refinedNav = nav.replace(
+    /<a href="javascript:history\.back\(\)">&larr; Back<\/a>/,
+    backButtonHtml,
+  );
 
   return `
 <!DOCTYPE html>
@@ -522,7 +533,7 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
     img { max-width: 100%; height: auto; border-radius: var(--radius-sm); border: 1px solid var(--border-color); }
     
     .reload-indicator {
-      position: fixed; top: 16px; right: 16px;
+      position: fixed; top: 60px; right: 16px;
       background: #10b981; color: white;
       padding: 0.5rem 1rem; border-radius: 20px;
       font-size: 0.75rem; font-weight: 600; opacity: 0; transition: all 0.3s;
@@ -967,29 +978,33 @@ const html = (content, title = "Mermaid Server", projectId = null, nav = "") => 
 `;
 };
 
-const getMarkdownFiles = (dir, prefix = "", recursive = true) => {
+const getMarkdownFiles = (dir, prefix = '', recursive = true) => {
   const files = [];
   if (!fs.existsSync(dir)) return files;
   const entries = fs.readdirSync(dir, { withFileTypes: true });
   for (const entry of entries) {
-    if (entry.name.startsWith(".") || entry.name === "node_modules") continue;
+    if (entry.name.startsWith('.') || entry.name === 'node_modules') continue;
     const fullPath = path.join(prefix, entry.name);
     if (entry.isDirectory()) {
-      if (recursive) files.push(...getMarkdownFiles(path.join(dir, entry.name), fullPath, true));
-      else files.push(fullPath + "/");
-    } else if (entry.name.endsWith(".md")) files.push(fullPath);
+      if (recursive)
+        files.push(
+          ...getMarkdownFiles(path.join(dir, entry.name), fullPath, true),
+        );
+      else files.push(fullPath + '/');
+    } else if (entry.name.endsWith('.md')) files.push(fullPath);
   }
   return files;
 };
 
 let debounceTimers = new Map();
 const notifyClients = (projectId) => {
-  if (debounceTimers.has(projectId)) clearTimeout(debounceTimers.get(projectId));
+  if (debounceTimers.has(projectId))
+    clearTimeout(debounceTimers.get(projectId));
   const timer = setTimeout(() => {
     const projectClients = clients.get(projectId);
     if (!projectClients) return;
     for (const client of projectClients) {
-      if (client.writable && !client.finished) client.write("data: reload\n\n");
+      if (client.writable && !client.finished) client.write('data: reload\n\n');
     }
     debounceTimers.delete(projectId);
   }, 100);
@@ -999,33 +1014,42 @@ const notifyClients = (projectId) => {
 const setupWatcher = (projectId, dir) => {
   if (watchers.has(projectId)) return;
   try {
-    const watcher = fs.watch(dir, { recursive: true }, (eventType, filename) => {
-      if (filename && filename.endsWith(".md")) notifyClients(projectId);
-    });
+    const watcher = fs.watch(
+      dir,
+      { recursive: true },
+      (eventType, filename) => {
+        if (filename && filename.endsWith('.md')) notifyClients(projectId);
+      },
+    );
     watchers.set(projectId, watcher);
-  } catch (err) { console.error(`Failed to watch ${dir}:`, err.message); }
+  } catch (err) {
+    console.error(`Failed to watch ${dir}:`, err.message);
+  }
 };
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
   const pathname = decodeURIComponent(url.pathname);
-  if (pathname === "/__reload") {
-    const projectId = url.searchParams.get("projectId");
+  if (pathname === '/__reload') {
+    const projectId = url.searchParams.get('projectId');
     if (!projectId) return res.end();
     res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive",
-      "Access-Control-Allow-Origin": "*",
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      Connection: 'keep-alive',
+      'Access-Control-Allow-Origin': '*',
     });
-    res.write("data: connected\n\n");
+    res.write('data: connected\n\n');
     const heartbeat = setInterval(() => {
-      if (res.writableEnded || res.finished) { clearInterval(heartbeat); return; }
-      res.write(": ping\n\n");
+      if (res.writableEnded || res.finished) {
+        clearInterval(heartbeat);
+        return;
+      }
+      res.write(': ping\n\n');
     }, 15000);
     if (!clients.has(projectId)) clients.set(projectId, new Set());
     clients.get(projectId).add(res);
-    const project = config.projects.find(p => p.id === projectId);
+    const project = config.projects.find((p) => p.id === projectId);
     if (project) setupWatcher(projectId, project.path);
     const cleanup = () => {
       const projectClients = clients.get(projectId);
@@ -1033,123 +1057,185 @@ const server = http.createServer((req, res) => {
         projectClients.delete(res);
         if (projectClients.size === 0) {
           const watcher = watchers.get(projectId);
-          if (watcher) { watcher.close(); watchers.delete(projectId); }
+          if (watcher) {
+            watcher.close();
+            watchers.delete(projectId);
+          }
         }
       }
       clearInterval(heartbeat);
     };
-    req.on("close", cleanup);
-    res.on("close", cleanup);
-    res.on("error", cleanup);
+    req.on('close', cleanup);
+    res.on('close', cleanup);
+    res.on('error', cleanup);
     return;
   }
-  if (pathname.startsWith("/api/")) {
-    res.setHeader("Connection", "close");
-    res.setHeader("Content-Type", "application/json");
-    if (pathname === "/api/browse") {
-      const targetPath = url.searchParams.get("path") || os.homedir();
+  if (pathname.startsWith('/api/')) {
+    res.setHeader('Connection', 'close');
+    res.setHeader('Content-Type', 'application/json');
+    if (pathname === '/api/browse') {
+      const targetPath = url.searchParams.get('path') || os.homedir();
       try {
         const entries = fs.readdirSync(targetPath, { withFileTypes: true });
-        const result = entries.filter(e => !e.name.startsWith(".") || e.name === ".git")
-          .map(e => ({ name: e.name, isDirectory: e.isDirectory(), path: path.join(targetPath, e.name) }))
-          .sort((a, b) => (a.isDirectory === b.isDirectory ? a.name.localeCompare(b.name) : a.isDirectory ? -1 : 1));
-        res.end(JSON.stringify({ currentPath: targetPath, parentPath: path.dirname(targetPath), entries: result }));
-      } catch (e) { res.statusCode = 400; res.end(JSON.stringify({ error: e.message })); }
+        const result = entries
+          .filter((e) => !e.name.startsWith('.') || e.name === '.git')
+          .map((e) => ({
+            name: e.name,
+            isDirectory: e.isDirectory(),
+            path: path.join(targetPath, e.name),
+          }))
+          .sort((a, b) =>
+            a.isDirectory === b.isDirectory
+              ? a.name.localeCompare(b.name)
+              : a.isDirectory
+                ? -1
+                : 1,
+          );
+        res.end(
+          JSON.stringify({
+            currentPath: targetPath,
+            parentPath: path.dirname(targetPath),
+            entries: result,
+          }),
+        );
+      } catch (e) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: e.message }));
+      }
       return;
     }
-    let body = "";
-    req.on("data", chunk => {
+    let body = '';
+    req.on('data', (chunk) => {
       body += chunk;
     });
-    req.on("end", () => {
+    req.on('end', () => {
       try {
         const data = body ? JSON.parse(body) : {};
-        if (pathname === "/api/projects" && req.method === "POST") {
-          const newProject = { 
-            id: crypto.randomBytes(4).toString("hex"), 
-            name: data.name, 
-            path: path.resolve(data.path) 
+        if (pathname === '/api/projects' && req.method === 'POST') {
+          const newProject = {
+            id: crypto.randomBytes(4).toString('hex'),
+            name: data.name,
+            path: path.resolve(data.path),
           };
-          config.projects.push(newProject); 
-          saveConfig(); 
+          config.projects.push(newProject);
+          saveConfig();
           res.end(JSON.stringify(newProject));
-        } else if (pathname === "/api/settings" && req.method === "PATCH") {
-          config.settings = { ...config.settings, ...data }; 
-          saveConfig(); 
+        } else if (pathname === '/api/settings' && req.method === 'PATCH') {
+          config.settings = { ...config.settings, ...data };
+          saveConfig();
           res.end(JSON.stringify(config.settings));
-        } else if (pathname.startsWith("/api/projects/") && req.method === "PATCH") {
-          const id = pathname.split("/").pop();
-          const p = config.projects.find(p => p.id === id);
-          if (p) { 
-            Object.assign(p, data); 
-            if (data.path) p.path = path.resolve(data.path); 
-            saveConfig(); 
-            res.end(JSON.stringify(p)); 
-          } else { 
-            res.statusCode = 404; 
-            res.end(); 
+        } else if (
+          pathname.startsWith('/api/projects/') &&
+          req.method === 'PATCH'
+        ) {
+          const id = pathname.split('/').pop();
+          const p = config.projects.find((p) => p.id === id);
+          if (p) {
+            Object.assign(p, data);
+            if (data.path) p.path = path.resolve(data.path);
+            saveConfig();
+            res.end(JSON.stringify(p));
+          } else {
+            res.statusCode = 404;
+            res.end();
           }
-        } else if (pathname.startsWith("/api/projects/") && req.method === "DELETE") {
-          config.projects = config.projects.filter(p => p.id !== pathname.split("/").pop());
-          saveConfig(); 
+        } else if (
+          pathname.startsWith('/api/projects/') &&
+          req.method === 'DELETE'
+        ) {
+          config.projects = config.projects.filter(
+            (p) => p.id !== pathname.split('/').pop(),
+          );
+          saveConfig();
           res.end(JSON.stringify({ success: true }));
-        } else { 
-          res.statusCode = 404; 
-          res.end(); 
+        } else {
+          res.statusCode = 404;
+          res.end();
         }
-      } catch (e) { res.statusCode = 400; res.end(JSON.stringify({ error: e.message })); }
+      } catch (e) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: e.message }));
+      }
     });
     return;
   }
-  if (pathname === "/") {
-    res.setHeader("Connection", "close");
-    res.end(html(`<h1>Mermaid Server</h1><p>Select a project from the sidebar.</p><ul class="file-list">${config.projects.map(p => `<li><a href="/p/${p.id}/">📁 <span>${p.name}</span></a></li>`).join("")}</ul>`, "Mermaid Server", null, ""));
+  if (pathname === '/') {
+    res.setHeader('Connection', 'close');
+    res.end(
+      html(
+        `<h1>Mermaid Server</h1><p>Select a project from the sidebar.</p><ul class="file-list">${config.projects.map((p) => `<li><a href="/p/${p.id}/">📁 <span>${p.name}</span></a></li>`).join('')}</ul>`,
+        'Mermaid Server',
+        null,
+        '',
+      ),
+    );
     return;
   }
   const projectMatch = pathname.match(/^\/p\/([^/]+)(\/.*)?/);
   if (projectMatch) {
-    res.setHeader("Connection", "close");
+    res.setHeader('Connection', 'close');
     const projectId = projectMatch[1];
-    const subPath = decodeURIComponent(projectMatch[2] || "/");
-    const project = config.projects.find(p => p.id === projectId);
-    if (!project) return res.end(html("<h1>Project Not Found</h1>"));
+    const subPath = decodeURIComponent(projectMatch[2] || '/');
+    const project = config.projects.find((p) => p.id === projectId);
+    if (!project) return res.end(html('<h1>Project Not Found</h1>'));
     const fullPath = path.join(project.path, subPath);
     const relative = path.relative(project.path, fullPath);
-    if (relative.startsWith("..") || path.isAbsolute(relative)) return res.end(html("<h1>Access Denied</h1>"));
-    if (!fs.existsSync(fullPath)) return res.end(html("<h1>404 - Not Found</h1>", "Not Found", projectId));
+    if (relative.startsWith('..') || path.isAbsolute(relative))
+      return res.end(html('<h1>Access Denied</h1>'));
+    if (!fs.existsSync(fullPath))
+      return res.end(html('<h1>404 - Not Found</h1>', 'Not Found', projectId));
     const stats = fs.statSync(fullPath);
     if (stats.isDirectory()) {
-      const readmePath = path.join(fullPath, "README.md");
-      const showAll = url.searchParams.get("all") === "true";
+      const readmePath = path.join(fullPath, 'README.md');
+      const showAll = url.searchParams.get('all') === 'true';
       if (fs.existsSync(readmePath) && !showAll) {
-        const content = fs.readFileSync(readmePath, "utf-8");
-        const title = getH1Title(content) || "README.md";
+        const content = fs.readFileSync(readmePath, 'utf-8');
+        const title = getH1Title(content) || 'README.md';
         const nav = `<div class="back-link"><a href="javascript:history.back()">&larr; Back</a><span style="color:var(--border-color)">|</span><a href="?all=true">Show all files</a></div>`;
         res.end(html(marked(content), title, projectId, nav));
       } else {
-        const files = getMarkdownFiles(fullPath, subPath === "/" ? "" : subPath, !showAll);
-        const list = files.sort().map(f => {
-          const isFolder = f.endsWith("/");
-          const name = isFolder ? f.slice(0, -1).split("/").pop() : path.basename(f);
-          return `<li><a href="/p/${projectId}/${f}">${isFolder ? '📁' : '📄'} <span>${name}</span></a></li>`;
-        }).join("");
+        const files = getMarkdownFiles(
+          fullPath,
+          subPath === '/' ? '' : subPath,
+          !showAll,
+        );
+        const list = files
+          .sort()
+          .map((f) => {
+            const isFolder = f.endsWith('/');
+            const name = isFolder
+              ? f.slice(0, -1).split('/').pop()
+              : path.basename(f);
+            return `<li><a href="/p/${projectId}/${f}">${isFolder ? '📁' : '📄'} <span>${name}</span></a></li>`;
+          })
+          .join('');
         const nav = `<div class="back-link"><a href="javascript:history.back()">&larr; Back</a></div>`;
-        res.end(html(`<h1>${path.basename(fullPath) || project.name}</h1><ul class="file-list">${list || "<li>No docs found</li>"}</ul>`, project.name, projectId, nav));
+        res.end(
+          html(
+            `<h1>${path.basename(fullPath) || project.name}</h1><ul class="file-list">${list || '<li>No docs found</li>'}</ul>`,
+            project.name,
+            projectId,
+            nav,
+          ),
+        );
       }
-    } else if (fullPath.endsWith(".md")) {
-      const content = fs.readFileSync(fullPath, "utf-8");
+    } else if (fullPath.endsWith('.md')) {
+      const content = fs.readFileSync(fullPath, 'utf-8');
       const title = getH1Title(content) || path.basename(fullPath);
       const nav = `<div class="back-link"><a href="javascript:history.back()">&larr; Back</a></div>`;
       res.end(html(marked(content), title, projectId, nav));
     } else {
       const ext = path.extname(fullPath).toLowerCase();
-      res.setHeader("Content-Type", MIME_TYPES[ext] || "application/octet-stream");
+      res.setHeader(
+        'Content-Type',
+        MIME_TYPES[ext] || 'application/octet-stream',
+      );
       fs.createReadStream(fullPath).pipe(res);
     }
-  } else { 
-    res.setHeader("Connection", "close");
-    res.statusCode = 404; 
-    res.end(html("<h1>404 - Not Found</h1>")); 
+  } else {
+    res.setHeader('Connection', 'close');
+    res.statusCode = 404;
+    res.end(html('<h1>404 - Not Found</h1>'));
   }
 });
 
