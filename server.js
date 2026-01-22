@@ -332,6 +332,11 @@ const html = (
       justify-content: space-between;
       align-items: center;
     }
+    .header-actions {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
 
     .progress-bar {
       position: absolute;
@@ -542,6 +547,37 @@ const html = (
     }
     .reload-indicator.show { opacity: 1; transform: translateY(0); }
 
+    .copy-page-button {
+      position: fixed;
+      top: 16px;
+      right: 16px;
+      width: 36px;
+      height: 36px;
+      border-radius: 999px;
+      border: 1px solid var(--border-color);
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      opacity: 0.45;
+      transition: opacity 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
+      z-index: 2100;
+      box-shadow: var(--shadow-sm);
+    }
+    .copy-page-button:hover {
+      opacity: 1;
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+      transform: translateY(-1px);
+    }
+    .copy-page-button.copied {
+      opacity: 1;
+      border-color: #10b981;
+      color: #10b981;
+    }
+
     .heading-anchor {
       position: absolute;
       left: -1.75rem;
@@ -665,11 +701,19 @@ const html = (
       <div class="container">
         <div class="header-nav">
           <div class="back-link">${refinedNav || '<span style="font-weight:600; font-size:0.875rem; color:#9ca3af;">DASHBOARD</span>'}</div>
-          <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;" id="scroll-status">0% READ</div>
+          <div class="header-actions">
+            <div style="font-size: 0.75rem; color: var(--text-muted); font-weight: 500;" id="scroll-status">0% READ</div>
+          </div>
         </div>
       </div>
       <div class="progress-bar" id="progress-bar"></div>
     </header>
+    <button id="copy-page-button" class="copy-page-button" title="Copy document text" aria-label="Copy document text">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+      </svg>
+    </button>
     <div class="container">
       <div class="content-body">
         <div class="reload-indicator" id="reload-indicator">Changes Detected • Reloading</div>
@@ -709,6 +753,7 @@ const html = (
   <script>
     const projectId = ${projectId ? `'${projectId}'` : 'null'};
     const mainEl = document.getElementById('main');
+    const copyButton = document.getElementById('copy-page-button');
     let evtSource = null;
     
     // Track page navigations (excluding hash changes) using sessionStorage
@@ -776,6 +821,165 @@ const html = (
       btn.innerText = 'Copied!';
       btn.style.background = '#10b981';
       setTimeout(() => { btn.innerText = original; btn.style.background = ''; }, 2000);
+    }
+
+    function getSvgDimensions(svg) {
+      let width = parseFloat(svg.getAttribute('width'));
+      let height = parseFloat(svg.getAttribute('height'));
+      if ((!width || !height) && svg.viewBox && svg.viewBox.baseVal) {
+        width = svg.viewBox.baseVal.width;
+        height = svg.viewBox.baseVal.height;
+      }
+      if (!width || !height) {
+        const bbox = svg.getBBox();
+        width = bbox.width;
+        height = bbox.height;
+      }
+      return { width: Math.ceil(width || 0), height: Math.ceil(height || 0) };
+    }
+
+    async function svgToPngDataUrl(svg) {
+      const { width, height } = getSvgDimensions(svg);
+      if (!width || !height) return null;
+      const serializer = new XMLSerializer();
+      let svgString = serializer.serializeToString(svg);
+      if (!svgString.includes('xmlns=')) {
+        svgString = svgString.replace('<svg', '<svg xmlns="http://www.w3.org/2000/svg"');
+      }
+      const svgBlob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+      const url = URL.createObjectURL(svgBlob);
+      try {
+        const img = new Image();
+        img.decoding = 'async';
+        const loaded = new Promise((resolve, reject) => {
+          img.onload = () => resolve();
+          img.onerror = () => reject(new Error('Image load failed'));
+        });
+        img.src = url;
+        await loaded;
+        const canvas = document.createElement('canvas');
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0, width, height);
+        return canvas.toDataURL('image/png');
+      } finally {
+        URL.revokeObjectURL(url);
+      }
+    }
+
+    function buildCopyHtml(bodyHtml) {
+      const styles = [
+        'body {'
+        + 'font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;'
+        + 'color: #111827;'
+        + 'line-height: 1.7;'
+        + 'font-size: 12pt;'
+        + '}',
+        'h1 { font-size: 2.2rem; margin: 1.5rem 0 1rem; }',
+        'h2 { font-size: 1.6rem; margin: 2rem 0 1rem; border-bottom: 1px solid #e5e7eb; padding-bottom: 0.4rem; }',
+        'h3 { font-size: 1.3rem; margin: 1.75rem 0 0.75rem; }',
+        'p { margin: 0 0 1rem; }',
+        'ul, ol { padding-left: 1.5rem; margin: 1rem 0; }',
+        'li { margin: 0.4rem 0; }',
+        'table { border-collapse: collapse; width: 100%; margin: 1.5rem 0; }',
+        'th, td { border: 1px solid #e5e7eb; padding: 0.6rem 0.8rem; text-align: left; }',
+        'th { background: #f9fafb; font-weight: 600; color: #4b5563; }',
+        'blockquote {'
+        + 'border-left: 4px solid #6366f1;'
+        + 'margin: 1.5rem 0;'
+        + 'padding: 0.8rem 1.2rem;'
+        + 'background: #f5f7ff;'
+        + 'color: #4b5563;'
+        + 'border-radius: 0 6px 6px 0;'
+        + '}',
+        'img { max-width: 100%; height: auto; border-radius: 6px; border: 1px solid #e5e7eb; }',
+        '.code-block-wrapper {'
+        + 'margin: 1.5rem 0;'
+        + 'border-radius: 10px;'
+        + 'overflow: hidden;'
+        + 'background: transparent !important;'
+        + 'border: 1px solid #374151;'
+        + '}',
+        '.code-block-header { display: none; }',
+        'pre {'
+        + 'margin: 0;'
+        + 'padding: 1.25rem;'
+        + 'overflow-x: auto;'
+        + 'font-family: ui-monospace, "JetBrains Mono", "SF Mono", monospace;'
+        + 'font-size: 0.9rem;'
+        + 'color: #e5e7eb;'
+        + 'background: #1f2937;'
+        + '}',
+        'pre code { background: none; padding: 0; color: inherit; }',
+        'code {'
+        + 'font-family: ui-monospace, "JetBrains Mono", "SF Mono", monospace;'
+        + 'background: transparent !important;'
+        + 'padding: 0.2rem 0.4rem;'
+        + 'border-radius: 4px;'
+        + 'font-size: 0.9em;'
+        + '}'
+      ].join('');
+      return '<!doctype html><html><head><meta charset="utf-8"><style>'
+        + styles
+        + '</style></head><body>'
+        + bodyHtml
+        + '</body></html>';
+    }
+
+    async function copyPageContent() {
+      const content = document.querySelector('.content-body');
+      if (!content) return;
+      const clone = content.cloneNode(true);
+      clone.querySelectorAll('.code-block-header').forEach(el => el.remove());
+      clone.querySelectorAll('.copy-button').forEach(el => el.remove());
+      clone.querySelectorAll('.heading-anchor').forEach(el => el.remove());
+      clone.querySelectorAll('.reload-indicator').forEach(el => el.remove());
+
+      const sourceMermaids = Array.from(content.querySelectorAll('.mermaid'));
+      const cloneMermaids = Array.from(clone.querySelectorAll('.mermaid'));
+      for (let i = 0; i < sourceMermaids.length; i += 1) {
+        const svg = sourceMermaids[i].querySelector('svg');
+        const cloneNode = cloneMermaids[i];
+        if (!svg || !cloneNode) continue;
+        try {
+          const pngUrl = await svgToPngDataUrl(svg);
+          if (!pngUrl) continue;
+          const img = document.createElement('img');
+          img.src = pngUrl;
+          img.alt = 'Mermaid diagram';
+          img.style.maxWidth = '100%';
+          img.style.height = 'auto';
+          img.style.display = 'block';
+          img.style.margin = '0 auto';
+          cloneNode.replaceWith(img);
+        } catch (err) {
+          continue;
+        }
+      }
+
+      const html = buildCopyHtml(clone.innerHTML);
+      const text = clone.innerText;
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': new Blob([html], { type: 'text/html' }),
+            'text/plain': new Blob([text], { type: 'text/plain' })
+          })
+        ]);
+      } catch (err) {
+        await navigator.clipboard.writeText(text);
+      }
+
+      if (copyButton) {
+        copyButton.classList.add('copied');
+        const originalTitle = copyButton.title;
+        copyButton.title = 'Copied!';
+        setTimeout(() => {
+          copyButton.classList.remove('copied');
+          copyButton.title = originalTitle;
+        }, 2000);
+      }
     }
 
     function toggleSidebar() {
@@ -972,6 +1176,7 @@ const html = (
 
     generateTOC();
     hljs.highlightAll();
+    if (copyButton) copyButton.addEventListener('click', copyPageContent);
   </script>
 </body>
 </html>
