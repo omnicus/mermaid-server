@@ -137,6 +137,7 @@ const html = (
   title = 'Mermaid Server',
   projectId = null,
   nav = '',
+  filePath = null,
 ) => {
   const projectListHtml = config.projects
     .map(
@@ -170,6 +171,7 @@ const html = (
   <title>${title}</title>
   <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
   <script>mermaid.initialize({startOnLoad: true, theme: 'default'});</script>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/styles/github-dark.min.css">
   <script src="https://cdn.jsdelivr.net/gh/highlightjs/cdn-release@11.9.0/build/highlight.min.js"></script>
   <style>
@@ -547,53 +549,54 @@ const html = (
     }
     .reload-indicator.show { opacity: 1; transform: translateY(0); }
 
-    .copy-page-dropdown {
+    .page-actions {
       position: fixed;
       top: 16px;
       right: 16px;
       z-index: 2100;
       display: flex;
       align-items: center;
+      gap: 8px;
       opacity: 0.45;
       transition: opacity 0.2s;
     }
-    .copy-page-dropdown:hover {
+    .page-actions:hover {
       opacity: 1;
     }
-    .copy-page-dropdown.copied {
+    .page-actions.copied {
       opacity: 1;
     }
-    .copy-page-button {
+    .page-action-button {
       height: 36px;
-      padding: 0 12px;
-      border-radius: 999px 0 0 999px;
+      width: 36px;
+      border-radius: 999px;
       border: 1px solid var(--border-color);
-      border-right: none;
       background: rgba(255, 255, 255, 0.9);
       color: var(--text-secondary);
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      gap: 6px;
       cursor: pointer;
-      transition: border-color 0.2s, color 0.2s, transform 0.2s;
+      transition: border-color 0.2s, color 0.2s, background 0.2s;
       box-shadow: var(--shadow-sm);
-      font-size: 0.8125rem;
-      font-weight: 500;
     }
-    .copy-page-button:hover {
+    .page-action-button:hover {
       border-color: var(--primary-color);
       color: var(--primary-color);
+      background: white;
     }
-    .copy-page-button.copied {
+    .page-action-button.copied {
       border-color: #10b981;
       color: #10b981;
     }
-    .copy-page-button .copy-text {
-      display: none;
+    .copy-page-dropdown {
+      display: flex;
+      align-items: center;
+      position: relative;
     }
-    .copy-page-button.copied .copy-text {
-      display: inline;
+    .copy-page-dropdown .page-action-button {
+      border-radius: 999px 0 0 999px;
+      border-right: none;
     }
     .copy-page-toggle {
       height: 36px;
@@ -747,6 +750,258 @@ const html = (
       border-bottom: 1px solid #f3f4f6;
     }
     .browser-item:hover { background: #f3f4f6; color: var(--primary-color); }
+
+/* Edit Mode */
+    .edit-mode {
+      display: none;
+      flex-direction: column;
+      height: 100%;
+      overflow: hidden;
+    }
+    body.editing #view-mode { display: none; }
+    body.editing .edit-mode { display: flex; }
+    body.editing .content-header { display: none; }
+    body.editing .page-actions { display: none; }
+    body.editing .toc-sidebar { display: none; }
+    body.editing #main { padding: 0; overflow: hidden; }
+    .editor-panes {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    .editor-pane-editor {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      background: #fafafa;
+    }
+    .editor-pane-preview {
+      flex: 1;
+      overflow-y: auto;
+      border-left: 1px solid var(--border-color);
+      background: white;
+    }
+    .editor-textarea {
+      flex: 1;
+      border: none;
+      padding: 1.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.9375rem;
+      line-height: 1.6;
+      resize: none;
+      outline: none;
+      background: #fafafa;
+      color: #1a1a1a;
+      tab-size: 2;
+    }
+    .editor-textarea:focus {
+      background: #fff;
+    }
+    .editor-textarea::placeholder {
+      color: #999;
+    }
+    .editor-preview {
+      padding: 2rem;
+      max-width: 720px;
+      margin: 0 auto;
+    }
+    .editor-preview h1 { font-size: 1.75rem; margin-top: 0; }
+    .editor-preview h2 { font-size: 1.375rem; margin-top: 2rem; }
+    .editor-preview h3 { font-size: 1.125rem; }
+    .editor-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.5rem 1rem;
+      border-top: 1px solid var(--border-color);
+      background: #f5f5f5;
+      font-size: 0.75rem;
+      color: var(--text-muted);
+    }
+    .editor-status { display: flex; align-items: center; gap: 0.5rem; }
+    .editor-status.saving { color: var(--primary-color); }
+    .editor-status.saved { color: #10b981; }
+    .editor-status.error { color: #ef4444; }
+    @media (max-width: 900px) {
+      .editor-pane-preview { display: none; }
+      body.editing.show-preview .editor-pane-editor { display: none; }
+      body.editing.show-preview .editor-pane-preview { display: block; }
+    }
+    .editor-modal.active { display: flex; }
+    .editor-container {
+      background: white;
+      width: 90vw;
+      height: 90vh;
+      max-width: 1200px;
+      border-radius: var(--radius-md);
+      box-shadow: 0 25px 50px -12px rgb(0 0 0 / 0.25);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+    }
+    .editor-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 1rem 1.5rem;
+      border-bottom: 1px solid var(--border-color);
+      background: var(--sidebar-bg);
+    }
+    .editor-title {
+      font-weight: 600;
+      font-size: 0.9375rem;
+      color: var(--text-main);
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    }
+    .editor-title svg { color: var(--text-muted); }
+    .editor-actions {
+      display: flex;
+      gap: 0.75rem;
+    }
+    .editor-toolbar {
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      padding: 0.5rem 1rem;
+      background: #f5f5f5;
+      border-bottom: 1px solid var(--border-color);
+      flex-wrap: wrap;
+    }
+    .toolbar-group {
+      display: flex;
+      align-items: center;
+      gap: 2px;
+    }
+    .toolbar-divider {
+      width: 1px;
+      height: 24px;
+      background: var(--border-color);
+      margin: 0 6px;
+    }
+    .toolbar-spacer {
+      flex: 1;
+    }
+    .editor-toolbar button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border: none;
+      background: transparent;
+      color: var(--text-secondary);
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.75rem;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+    .editor-toolbar button:hover {
+      background: white;
+      color: var(--primary-color);
+      box-shadow: var(--shadow-sm);
+    }
+    .editor-toolbar button:active {
+      transform: scale(0.95);
+    }
+    .toolbar-btn-text {
+      width: auto !important;
+      padding: 0 12px !important;
+      color: var(--text-secondary) !important;
+    }
+    .toolbar-btn-text:hover {
+      color: var(--text-main) !important;
+      background: white !important;
+    }
+    .toolbar-btn-primary {
+      width: auto !important;
+      padding: 0 16px !important;
+      background: var(--primary-color) !important;
+      color: white !important;
+    }
+    .toolbar-btn-primary:hover {
+      background: var(--primary-hover) !important;
+    }
+    .editor-body {
+      flex: 1;
+      display: flex;
+      overflow: hidden;
+    }
+    .editor-textarea {
+      flex: 1;
+      border: none;
+      padding: 1.5rem;
+      font-family: var(--font-mono);
+      font-size: 0.9375rem;
+      line-height: 1.6;
+      resize: none;
+      outline: none;
+      background: #fafafa;
+    }
+    .editor-textarea:focus {
+      background: white;
+    }
+    .editor-preview {
+      flex: 1;
+      overflow-y: auto;
+      padding: 1.5rem;
+      border-left: 1px solid var(--border-color);
+      background: white;
+    }
+    .editor-preview h1 { font-size: 1.75rem; margin-top: 0; }
+    .editor-preview h2 { font-size: 1.375rem; }
+    .editor-preview h3 { font-size: 1.125rem; }
+    .editor-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 0.75rem 1.5rem;
+      border-top: 1px solid var(--border-color);
+      background: var(--sidebar-bg);
+      font-size: 0.8125rem;
+      color: var(--text-muted);
+    }
+    .editor-status { display: flex; align-items: center; gap: 0.5rem; }
+    .editor-status.saving { color: var(--primary-color); }
+    .editor-status.saved { color: #10b981; }
+    .editor-status.error { color: #ef4444; }
+    .btn-edit {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.375rem;
+      padding: 0.375rem 0.75rem;
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    .btn-edit:hover {
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+    .editor-toggle-preview {
+      display: none;
+      padding: 0.375rem 0.75rem;
+      background: #f3f4f6;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      color: var(--text-secondary);
+      font-size: 0.75rem;
+      cursor: pointer;
+    }
+    .editor-toggle-preview.active { background: var(--primary-color); color: white; border-color: var(--primary-color); }
+    @media (max-width: 900px) {
+      .editor-preview { display: none; }
+      .editor-preview.mobile-visible { display: block; position: absolute; left: 0; right: 0; top: 60px; bottom: 50px; z-index: 10; }
+      .editor-toggle-preview { display: inline-block; }
+    }
   </style>
 </head>
 <body>
@@ -778,27 +1033,88 @@ const html = (
       </div>
       <div class="progress-bar" id="progress-bar"></div>
     </header>
-    <div class="copy-page-dropdown" id="copy-page-dropdown">
-      <button id="copy-page-button" class="copy-page-button" title="Copy document" aria-label="Copy document">
+    <div class="page-actions" id="page-actions">
+      ${filePath ? `<button id="edit-page-button" class="page-action-button" onclick="openEditor()" title="Edit this file" aria-label="Edit this file">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <rect x="9" y="9" width="13" height="13" rx="2"></rect>
-          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+          <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
         </svg>
-      </button>
-      <button class="copy-page-toggle" id="copy-page-toggle" title="Copy options" aria-label="Copy options">&#9662;</button>
-      <div class="copy-page-menu" id="copy-page-menu">
-        <button onclick="copyPageAs('default')">Copy (Default)</button>
-        <button onclick="copyPageAs('text')">Copy as Text</button>
-        <button onclick="copyPageAs('html')">Copy as HTML</button>
-        <button onclick="copyPageAs('markdown')">Copy as Markdown</button>
+      </button>` : ''}
+      <div class="copy-page-dropdown" id="copy-page-dropdown">
+        <button id="copy-page-button" class="page-action-button" title="Copy document" aria-label="Copy document">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+            <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+          </svg>
+        </button>
+        <button class="copy-page-toggle" id="copy-page-toggle" title="Copy options" aria-label="Copy options">&#9662;</button>
+        <div class="copy-page-menu" id="copy-page-menu">
+          <button onclick="copyPageAs('default')">Copy (Default)</button>
+          <button onclick="copyPageAs('text')">Copy as Text</button>
+          <button onclick="copyPageAs('html')">Copy as HTML</button>
+          <button onclick="copyPageAs('markdown')">Copy as Markdown</button>
+        </div>
       </div>
     </div>
-    <div class="container">
+    <div class="container" id="view-mode">
       <div class="content-body">
         <div class="reload-indicator" id="reload-indicator">Changes Detected • Reloading</div>
         ${content}
       </div>
     </div>
+    ${filePath ? `<div class="edit-mode" id="edit-mode">
+      <div class="editor-toolbar" id="editor-toolbar">
+        <div class="toolbar-group">
+          <button type="button" onclick="insertHeading(1)" title="Heading 1">H1</button>
+          <button type="button" onclick="insertHeading(2)" title="Heading 2">H2</button>
+          <button type="button" onclick="insertHeading(3)" title="Heading 3">H3</button>
+        </div>
+        <div class="toolbar-divider"></div>
+        <div class="toolbar-group">
+          <button type="button" onclick="insertFormat('bold')" title="Bold (Ctrl+B)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 4h8a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path><path d="M6 12h9a4 4 0 0 1 4 4 4 4 0 0 1-4 4H6z"></path></svg></button>
+          <button type="button" onclick="insertFormat('italic')" title="Italic (Ctrl+I)"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="19" y1="4" x2="10" y2="4"></line><line x1="14" y1="20" x2="5" y2="20"></line><line x1="15" y1="4" x2="9" y2="20"></line></svg></button>
+        </div>
+        <div class="toolbar-divider"></div>
+        <div class="toolbar-group">
+          <button type="button" onclick="insertFormat('link')" title="Link"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg></button>
+          <button type="button" onclick="insertFormat('image')" title="Image"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><circle cx="8.5" cy="8.5" r="1.5"></circle><polyline points="21 15 16 10 5 21"></polyline></svg></button>
+        </div>
+        <div class="toolbar-divider"></div>
+        <div class="toolbar-group">
+          <button type="button" onclick="insertFormat('bullet')" title="Bullet List"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></button>
+          <button type="button" onclick="insertFormat('numbered')" title="Numbered List"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="10" y1="6" x2="21" y2="6"></line><line x1="10" y1="12" x2="21" y2="12"></line><line x1="10" y1="18" x2="21" y2="18"></line><path d="M4 6h1v4"></path><path d="M4 10h2"></path><path d="M6 18H4c0-1 2-2 2-3s-1-1.5-2-1"></path></svg></button>
+          <button type="button" onclick="insertFormat('blockquote')" title="Blockquote"><svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><path d="M6 17h3l2-4V7H5v6h3zm8 0h3l2-4V7h-6v6h3z"></path></svg></button>
+        </div>
+        <div class="toolbar-divider"></div>
+        <div class="toolbar-group">
+          <button type="button" onclick="insertFormat('code')" title="Code Block"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg></button>
+          <button type="button" onclick="insertFormat('mermaid')" title="Mermaid Diagram"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v18"></path><path d="M3 12h18"></path><circle cx="12" cy="6" r="2"></circle><circle cx="6" cy="12" r="2"></circle><circle cx="18" cy="12" r="2"></circle><circle cx="12" cy="18" r="2"></circle></svg></button>
+          <button type="button" onclick="insertFormat('table')" title="Table"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="3" y1="15" x2="21" y2="15"></line><line x1="9" y1="3" x2="9" y2="21"></line><line x1="15" y1="3" x2="15" y2="21"></line></svg></button>
+          <button type="button" onclick="insertFormat('hr')" title="Horizontal Rule"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"></line></svg></button>
+        </div>
+        <div class="toolbar-spacer"></div>
+        <div class="toolbar-group">
+          <button type="button" class="toolbar-btn-text" onclick="closeEditor()">Cancel</button>
+          <button type="button" class="toolbar-btn-primary" onclick="saveFile()">Save</button>
+        </div>
+      </div>
+      <div class="editor-panes">
+        <div class="editor-pane-editor">
+          <textarea class="editor-textarea" id="editor-textarea" placeholder="Write your markdown here..."></textarea>
+        </div>
+        <div class="editor-pane-preview">
+          <div class="editor-preview" id="editor-preview"></div>
+        </div>
+      </div>
+      <div class="editor-footer">
+        <div class="editor-status" id="editor-status">
+          <span>Press Ctrl+S to save</span>
+        </div>
+        <div>
+          <span id="editor-line-count">0 lines</span>
+        </div>
+      </div>
+    </div>` : ''}
   </main>
 
   <div class="diagram-modal" id="diagram-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.85); z-index:3000; justify-content:center; align-items:center; padding:2rem; box-sizing:border-box;">
@@ -829,11 +1145,15 @@ const html = (
     </div>
   </div>
 
+  
+
   <script>
     const projectId = ${projectId ? `'${projectId}'` : 'null'};
+    const filePath = ${filePath ? `'${filePath}'` : 'null'};
     const mainEl = document.getElementById('main');
     const copyButton = document.getElementById('copy-page-button');
     let evtSource = null;
+    let editorDirty = false;
     
     // Track page navigations (excluding hash changes) using sessionStorage
     const NAV_HISTORY_KEY = 'mermaid_nav_history';
@@ -1161,16 +1481,16 @@ const html = (
 
     function showCopyFeedback() {
       if (!copyButton) return;
-      const dropdown = document.getElementById('copy-page-dropdown');
+      const pageActions = document.getElementById('page-actions');
       const originalIcon = copyButton.innerHTML;
-      copyButton.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span class="copy-text">Copied!</span>';
+      copyButton.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg>';
       copyButton.classList.add('copied');
-      if (dropdown) dropdown.classList.add('copied');
+      if (pageActions) pageActions.classList.add('copied');
       copyButton.title = 'Copied!';
       setTimeout(() => {
         copyButton.innerHTML = originalIcon;
         copyButton.classList.remove('copied');
-        if (dropdown) dropdown.classList.remove('copied');
+        if (pageActions) pageActions.classList.remove('copied');
         copyButton.title = 'Copy document';
       }, 2000);
     }
@@ -1372,6 +1692,247 @@ const html = (
     if (copyButton) copyButton.addEventListener('click', () => copyPageAs('default'));
     const copyToggle = document.getElementById('copy-page-toggle');
     if (copyToggle) copyToggle.addEventListener('click', toggleCopyPageMenu);
+
+    // Editor functionality
+    const editorTextarea = document.getElementById('editor-textarea');
+    const editorPreview = document.getElementById('editor-preview');
+    const editorStatus = document.getElementById('editor-status');
+    const editorLineCount = document.getElementById('editor-line-count');
+    let previewDebounce = null;
+    let isEditing = false;
+
+    async function openEditor() {
+      if (!projectId || !filePath) return;
+      if (!editorStatus) return;
+      editorStatus.className = 'editor-status';
+      editorStatus.innerHTML = '<span>Loading...</span>';
+      document.body.classList.add('editing');
+      isEditing = true;
+      try {
+        const res = await fetch('/api/file?projectId=' + projectId + '&path=' + encodeURIComponent(filePath));
+        if (!res.ok) throw new Error('Failed to load file');
+        const data = await res.json();
+        editorTextarea.value = data.content;
+        editorDirty = false;
+        updateEditorPreview();
+        updateLineCount();
+        editorStatus.innerHTML = '<span>Press Ctrl+S to save</span>';
+        // Set cursor to beginning and scroll to top
+        editorTextarea.setSelectionRange(0, 0);
+        editorTextarea.focus();
+        editorTextarea.scrollTop = 0;
+      } catch (e) {
+        editorStatus.className = 'editor-status error';
+        editorStatus.innerHTML = '<span>Error: ' + e.message + '</span>';
+      }
+    }
+
+    function closeEditor() {
+      if (editorDirty && !confirm('You have unsaved changes. Discard them?')) return;
+      document.body.classList.remove('editing');
+      document.body.classList.remove('show-preview');
+      isEditing = false;
+      editorDirty = false;
+      // Reload to show updated content
+      if (editorTextarea && editorTextarea.value) {
+        location.reload();
+      }
+    }
+
+    async function saveFile() {
+      if (!projectId || !filePath) return;
+      editorStatus.className = 'editor-status saving';
+      editorStatus.innerHTML = '<span>Saving...</span>';
+      try {
+        const res = await fetch('/api/file?projectId=' + projectId + '&path=' + encodeURIComponent(filePath), {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ content: editorTextarea.value })
+        });
+        if (!res.ok) throw new Error('Failed to save file');
+        editorDirty = false;
+        editorStatus.className = 'editor-status saved';
+        editorStatus.innerHTML = '<span>Saved successfully</span>';
+        setTimeout(() => {
+          if (!editorDirty) {
+            editorStatus.className = 'editor-status';
+            editorStatus.innerHTML = '<span>Press Ctrl+S to save</span>';
+          }
+        }, 2000);
+      } catch (e) {
+        editorStatus.className = 'editor-status error';
+        editorStatus.innerHTML = '<span>Error: ' + e.message + '</span>';
+      }
+    }
+
+    function updateEditorPreview() {
+      // Simple markdown preview - marked library is loaded via CDN
+      try {
+        editorPreview.innerHTML = marked.parse(editorTextarea.value);
+        // Re-render mermaid diagrams
+        editorPreview.querySelectorAll('.mermaid').forEach((el, i) => {
+          const code = el.textContent;
+          el.removeAttribute('data-processed');
+          el.innerHTML = code;
+        });
+        mermaid.init(undefined, editorPreview.querySelectorAll('.mermaid'));
+        // Highlight code blocks
+        editorPreview.querySelectorAll('pre code').forEach(block => {
+          hljs.highlightElement(block);
+        });
+      } catch (e) {
+        editorPreview.innerHTML = '<p style="color:#ef4444;">Preview error: ' + e.message + '</p>';
+      }
+    }
+
+    function updateLineCount() {
+      const lines = editorTextarea.value.split('\\n').length;
+      editorLineCount.textContent = lines + ' line' + (lines !== 1 ? 's' : '');
+    }
+
+    function insertAtCursor(before, after = '', placeholder = '') {
+      const scrollTop = editorTextarea.scrollTop;
+      const start = editorTextarea.selectionStart;
+      const end = editorTextarea.selectionEnd;
+      const text = editorTextarea.value;
+      const selectedText = text.substring(start, end) || placeholder;
+      const newText = text.substring(0, start) + before + selectedText + after + text.substring(end);
+      editorTextarea.value = newText;
+      // Position cursor appropriately
+      if (text.substring(start, end)) {
+        // Had selection, move cursor to end
+        editorTextarea.selectionStart = editorTextarea.selectionEnd = start + before.length + selectedText.length + after.length;
+      } else {
+        // No selection, select the placeholder
+        editorTextarea.selectionStart = start + before.length;
+        editorTextarea.selectionEnd = start + before.length + placeholder.length;
+      }
+      // Restore scroll position and focus
+      editorTextarea.scrollTop = scrollTop;
+      editorTextarea.focus();
+      editorDirty = true;
+      updateLineCount();
+      if (previewDebounce) clearTimeout(previewDebounce);
+      previewDebounce = setTimeout(updateEditorPreview, 300);
+    }
+
+    function insertHeading(level) {
+      const scrollTop = editorTextarea.scrollTop;
+      const prefix = '#'.repeat(level) + ' ';
+      const start = editorTextarea.selectionStart;
+      const text = editorTextarea.value;
+      // Find start of current line
+      let lineStart = start;
+      while (lineStart > 0 && text[lineStart - 1] !== '\\n') lineStart--;
+      // Check if line already has heading
+      const lineEnd = text.indexOf('\\n', start);
+      const line = text.substring(lineStart, lineEnd === -1 ? text.length : lineEnd);
+      const existingHeading = line.match(/^#{1,6}\\s*/);
+      if (existingHeading) {
+        // Replace existing heading level
+        const newLine = prefix + line.substring(existingHeading[0].length);
+        editorTextarea.value = text.substring(0, lineStart) + newLine + text.substring(lineEnd === -1 ? text.length : lineEnd);
+      } else {
+        // Insert heading prefix
+        editorTextarea.value = text.substring(0, lineStart) + prefix + text.substring(lineStart);
+      }
+      // Restore scroll position and focus
+      editorTextarea.scrollTop = scrollTop;
+      editorTextarea.focus();
+      editorDirty = true;
+      updateLineCount();
+      if (previewDebounce) clearTimeout(previewDebounce);
+      previewDebounce = setTimeout(updateEditorPreview, 300);
+    }
+
+    function insertFormat(type) {
+      switch (type) {
+        case 'bold':
+          insertAtCursor('**', '**', 'bold text');
+          break;
+        case 'italic':
+          insertAtCursor('*', '*', 'italic text');
+          break;
+        case 'link':
+          insertAtCursor('[', '](url)', 'link text');
+          break;
+        case 'image':
+          insertAtCursor('![', '](image-url)', 'alt text');
+          break;
+        case 'code':
+          insertAtCursor('\\n\`\`\`\\n', '\\n\`\`\`\\n', 'code here');
+          break;
+        case 'mermaid':
+          insertAtCursor('\\n\`\`\`mermaid\\n', '\\n\`\`\`\\n', 'graph TD\\n    A[Start] --> B[End]');
+          break;
+        case 'bullet':
+          insertAtCursor('\\n- ', '', 'List item');
+          break;
+        case 'numbered':
+          insertAtCursor('\\n1. ', '', 'List item');
+          break;
+        case 'blockquote':
+          insertAtCursor('\\n> ', '', 'Quote text');
+          break;
+        case 'table':
+          insertAtCursor('\\n| Header 1 | Header 2 | Header 3 |\\n|----------|----------|----------|\\n| Cell 1   | Cell 2   | Cell 3   |\\n| Cell 4   | Cell 5   | Cell 6   |\\n', '', '');
+          break;
+        case 'hr':
+          insertAtCursor('\\n---\\n', '', '');
+          break;
+      }
+    }
+
+    function toggleEditorPreview() {
+      document.body.classList.toggle('show-preview');
+    }
+
+    if (editorTextarea) {
+      editorTextarea.addEventListener('input', () => {
+        editorDirty = true;
+        updateLineCount();
+        if (previewDebounce) clearTimeout(previewDebounce);
+        previewDebounce = setTimeout(updateEditorPreview, 300);
+      });
+      // Handle Tab key for indentation
+      editorTextarea.addEventListener('keydown', (e) => {
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          const start = editorTextarea.selectionStart;
+          const end = editorTextarea.selectionEnd;
+          editorTextarea.value = editorTextarea.value.substring(0, start) + '  ' + editorTextarea.value.substring(end);
+          editorTextarea.selectionStart = editorTextarea.selectionEnd = start + 2;
+          editorDirty = true;
+        }
+      });
+    }
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      if (isEditing) {
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          closeEditor();
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+          e.preventDefault();
+          saveFile();
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'b') {
+          e.preventDefault();
+          insertFormat('bold');
+        } else if ((e.ctrlKey || e.metaKey) && e.key === 'i') {
+          e.preventDefault();
+          insertFormat('italic');
+        }
+      }
+    });
+
+    // Warn before leaving with unsaved changes
+    window.addEventListener('beforeunload', (e) => {
+      if (editorDirty) {
+        e.preventDefault();
+        e.returnValue = '';
+      }
+    });
   </script>
 </body>
 </html>
@@ -1504,6 +2065,59 @@ const server = http.createServer((req, res) => {
       }
       return;
     }
+    // File read/write API for editing markdown files
+    if (pathname === '/api/file') {
+      const projectId = url.searchParams.get('projectId');
+      const filePath = url.searchParams.get('path');
+      const project = config.projects.find((p) => p.id === projectId);
+      if (!project) {
+        res.statusCode = 404;
+        res.end(JSON.stringify({ error: 'Project not found' }));
+        return;
+      }
+      const fullPath = path.join(project.path, filePath);
+      const relative = path.relative(project.path, fullPath);
+      if (relative.startsWith('..') || path.isAbsolute(relative)) {
+        res.statusCode = 403;
+        res.end(JSON.stringify({ error: 'Access denied' }));
+        return;
+      }
+      if (!fullPath.endsWith('.md')) {
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: 'Only markdown files can be edited' }));
+        return;
+      }
+      if (req.method === 'GET') {
+        try {
+          const content = fs.readFileSync(fullPath, 'utf-8');
+          res.end(JSON.stringify({ content, path: filePath }));
+        } catch (e) {
+          res.statusCode = 404;
+          res.end(JSON.stringify({ error: 'File not found' }));
+        }
+        return;
+      }
+      if (req.method === 'PUT') {
+        let body = '';
+        req.on('data', (chunk) => { body += chunk; });
+        req.on('end', () => {
+          try {
+            const data = JSON.parse(body);
+            if (typeof data.content !== 'string') {
+              res.statusCode = 400;
+              res.end(JSON.stringify({ error: 'Content is required' }));
+              return;
+            }
+            fs.writeFileSync(fullPath, data.content, 'utf-8');
+            res.end(JSON.stringify({ success: true, path: filePath }));
+          } catch (e) {
+            res.statusCode = 500;
+            res.end(JSON.stringify({ error: e.message }));
+          }
+        });
+        return;
+      }
+    }
     let body = '';
     req.on('data', (chunk) => {
       body += chunk;
@@ -1591,8 +2205,9 @@ const server = http.createServer((req, res) => {
       if (fs.existsSync(readmePath) && !showAll) {
         const content = fs.readFileSync(readmePath, 'utf-8');
         const title = getH1Title(content) || 'README.md';
+        const readmeFilePath = subPath === '/' ? 'README.md' : path.join(subPath, 'README.md');
         const nav = `<div class="back-link"><a href="javascript:history.back()">&larr; Back</a><span style="color:var(--border-color)">|</span><a href="?all=true">Show all files</a></div>`;
-        res.end(html(marked(content), title, projectId, nav));
+        res.end(html(marked(content), title, projectId, nav, readmeFilePath));
       } else {
         const files = getMarkdownFiles(
           fullPath,
@@ -1623,7 +2238,7 @@ const server = http.createServer((req, res) => {
       const content = fs.readFileSync(fullPath, 'utf-8');
       const title = getH1Title(content) || path.basename(fullPath);
       const nav = `<div class="back-link"><a href="javascript:history.back()">&larr; Back</a></div>`;
-      res.end(html(marked(content), title, projectId, nav));
+      res.end(html(marked(content), title, projectId, nav, subPath));
     } else {
       const ext = path.extname(fullPath).toLowerCase();
       res.setHeader(
