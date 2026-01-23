@@ -547,13 +547,58 @@ const html = (
     }
     .reload-indicator.show { opacity: 1; transform: translateY(0); }
 
-    .copy-page-button {
+    .copy-page-dropdown {
       position: fixed;
       top: 16px;
       right: 16px;
-      width: 36px;
+      z-index: 2100;
+      display: flex;
+      align-items: center;
+      opacity: 0.45;
+      transition: opacity 0.2s;
+    }
+    .copy-page-dropdown:hover {
+      opacity: 1;
+    }
+    .copy-page-dropdown.copied {
+      opacity: 1;
+    }
+    .copy-page-button {
       height: 36px;
-      border-radius: 999px;
+      padding: 0 12px;
+      border-radius: 999px 0 0 999px;
+      border: 1px solid var(--border-color);
+      border-right: none;
+      background: rgba(255, 255, 255, 0.9);
+      color: var(--text-secondary);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 6px;
+      cursor: pointer;
+      transition: border-color 0.2s, color 0.2s, transform 0.2s;
+      box-shadow: var(--shadow-sm);
+      font-size: 0.8125rem;
+      font-weight: 500;
+    }
+    .copy-page-button:hover {
+      border-color: var(--primary-color);
+      color: var(--primary-color);
+    }
+    .copy-page-button.copied {
+      border-color: #10b981;
+      color: #10b981;
+    }
+    .copy-page-button .copy-text {
+      display: none;
+    }
+    .copy-page-button.copied .copy-text {
+      display: inline;
+    }
+    .copy-page-toggle {
+      height: 36px;
+      padding: 0 8px;
+      border-radius: 0 999px 999px 0;
       border: 1px solid var(--border-color);
       background: rgba(255, 255, 255, 0.9);
       color: var(--text-secondary);
@@ -561,21 +606,46 @@ const html = (
       align-items: center;
       justify-content: center;
       cursor: pointer;
-      opacity: 0.45;
-      transition: opacity 0.2s, border-color 0.2s, color 0.2s, transform 0.2s;
-      z-index: 2100;
+      transition: border-color 0.2s, color 0.2s;
       box-shadow: var(--shadow-sm);
+      font-size: 0.6rem;
     }
-    .copy-page-button:hover {
-      opacity: 1;
+    .copy-page-toggle:hover {
       border-color: var(--primary-color);
       color: var(--primary-color);
-      transform: translateY(-1px);
     }
-    .copy-page-button.copied {
-      opacity: 1;
-      border-color: #10b981;
-      color: #10b981;
+    .copy-page-menu {
+      display: none;
+      position: absolute;
+      top: 100%;
+      right: 0;
+      margin-top: 8px;
+      background: white;
+      border: 1px solid var(--border-color);
+      border-radius: var(--radius-sm);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+      overflow: hidden;
+      min-width: 160px;
+    }
+    .copy-page-menu.show { display: block; }
+    .copy-page-menu button {
+      display: block;
+      width: 100%;
+      padding: 10px 16px;
+      background: none;
+      border: none;
+      text-align: left;
+      font-size: 0.875rem;
+      color: var(--text-main);
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .copy-page-menu button:hover {
+      background: #f3f4f6;
+      color: var(--primary-color);
+    }
+    .copy-page-menu button + button {
+      border-top: 1px solid var(--border-color);
     }
 
     .heading-anchor {
@@ -708,12 +778,21 @@ const html = (
       </div>
       <div class="progress-bar" id="progress-bar"></div>
     </header>
-    <button id="copy-page-button" class="copy-page-button" title="Copy document text" aria-label="Copy document text">
-      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-        <rect x="9" y="9" width="13" height="13" rx="2"></rect>
-        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
-      </svg>
-    </button>
+    <div class="copy-page-dropdown" id="copy-page-dropdown">
+      <button id="copy-page-button" class="copy-page-button" title="Copy document" aria-label="Copy document">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <rect x="9" y="9" width="13" height="13" rx="2"></rect>
+          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+        </svg>
+      </button>
+      <button class="copy-page-toggle" id="copy-page-toggle" title="Copy options" aria-label="Copy options">&#9662;</button>
+      <div class="copy-page-menu" id="copy-page-menu">
+        <button onclick="copyPageAs('default')">Copy (Default)</button>
+        <button onclick="copyPageAs('text')">Copy as Text</button>
+        <button onclick="copyPageAs('html')">Copy as HTML</button>
+        <button onclick="copyPageAs('markdown')">Copy as Markdown</button>
+      </div>
+    </div>
     <div class="container">
       <div class="content-body">
         <div class="reload-indicator" id="reload-indicator">Changes Detected • Reloading</div>
@@ -927,7 +1006,94 @@ const html = (
         + '</body></html>';
     }
 
-    async function copyPageContent() {
+    function toggleCopyPageMenu(e) {
+      e.stopPropagation();
+      const menu = document.getElementById('copy-page-menu');
+      menu.classList.toggle('show');
+    }
+
+    document.addEventListener('click', (e) => {
+      const menu = document.getElementById('copy-page-menu');
+      const toggle = document.getElementById('copy-page-toggle');
+      if (menu && toggle && !toggle.contains(e.target) && !menu.contains(e.target)) {
+        menu.classList.remove('show');
+      }
+    });
+
+    function htmlToMarkdown(element) {
+      let md = '';
+      const walk = (node) => {
+        if (node.nodeType === Node.TEXT_NODE) {
+          md += node.textContent;
+          return;
+        }
+        if (node.nodeType !== Node.ELEMENT_NODE) return;
+        const tag = node.tagName.toLowerCase();
+        switch (tag) {
+          case 'h1': md += '# '; node.childNodes.forEach(walk); md += '\\n\\n'; break;
+          case 'h2': md += '## '; node.childNodes.forEach(walk); md += '\\n\\n'; break;
+          case 'h3': md += '### '; node.childNodes.forEach(walk); md += '\\n\\n'; break;
+          case 'h4': md += '#### '; node.childNodes.forEach(walk); md += '\\n\\n'; break;
+          case 'h5': md += '##### '; node.childNodes.forEach(walk); md += '\\n\\n'; break;
+          case 'h6': md += '###### '; node.childNodes.forEach(walk); md += '\\n\\n'; break;
+          case 'p': node.childNodes.forEach(walk); md += '\\n\\n'; break;
+          case 'br': md += '\\n'; break;
+          case 'strong': case 'b': md += '**'; node.childNodes.forEach(walk); md += '**'; break;
+          case 'em': case 'i': md += '*'; node.childNodes.forEach(walk); md += '*'; break;
+          case 'code':
+            if (node.parentElement && node.parentElement.tagName.toLowerCase() === 'pre') {
+              node.childNodes.forEach(walk);
+            } else {
+              md += '\`'; node.childNodes.forEach(walk); md += '\`';
+            }
+            break;
+          case 'pre':
+            const codeEl = node.querySelector('code');
+            const lang = codeEl ? (codeEl.className.match(/language-(\\w+)/)?.[1] || '') : '';
+            md += '\`\`\`' + lang + '\\n';
+            node.childNodes.forEach(walk);
+            md += '\\n\`\`\`\\n\\n';
+            break;
+          case 'a':
+            md += '['; node.childNodes.forEach(walk); md += '](' + (node.getAttribute('href') || '') + ')';
+            break;
+          case 'img':
+            md += '![' + (node.getAttribute('alt') || '') + '](' + (node.getAttribute('src') || '') + ')';
+            break;
+          case 'ul': case 'ol':
+            const isOrdered = tag === 'ol';
+            let idx = 1;
+            node.querySelectorAll(':scope > li').forEach(li => {
+              md += (isOrdered ? (idx++ + '. ') : '- ');
+              li.childNodes.forEach(walk);
+              md += '\\n';
+            });
+            md += '\\n';
+            break;
+          case 'li': break; // handled by ul/ol
+          case 'blockquote':
+            const lines = [];
+            node.childNodes.forEach(walk);
+            break;
+          case 'hr': md += '---\\n\\n'; break;
+          case 'div':
+            if (node.classList.contains('mermaid')) {
+              md += '\`\`\`mermaid\\n' + node.textContent.trim() + '\\n\`\`\`\\n\\n';
+            } else {
+              node.childNodes.forEach(walk);
+            }
+            break;
+          default: node.childNodes.forEach(walk); break;
+        }
+      };
+      element.childNodes.forEach(walk);
+      return md.replace(/\\n{3,}/g, '\\n\\n').trim();
+    }
+
+    async function copyPageAs(format) {
+      const menu = document.getElementById('copy-page-menu');
+      menu.classList.remove('show');
+
       const content = document.querySelector('.content-body');
       if (!content) return;
       const clone = content.cloneNode(true);
@@ -936,50 +1102,77 @@ const html = (
       clone.querySelectorAll('.heading-anchor').forEach(el => el.remove());
       clone.querySelectorAll('.reload-indicator').forEach(el => el.remove());
 
-      const sourceMermaids = Array.from(content.querySelectorAll('.mermaid'));
-      const cloneMermaids = Array.from(clone.querySelectorAll('.mermaid'));
-      for (let i = 0; i < sourceMermaids.length; i += 1) {
-        const svg = sourceMermaids[i].querySelector('svg');
-        const cloneNode = cloneMermaids[i];
-        if (!svg || !cloneNode) continue;
-        try {
-          const pngUrl = await svgToPngDataUrl(svg);
-          if (!pngUrl) continue;
-          const img = document.createElement('img');
-          img.src = pngUrl;
-          img.alt = 'Mermaid diagram';
-          img.style.maxWidth = '100%';
-          img.style.height = 'auto';
-          img.style.display = 'block';
-          img.style.margin = '0 auto';
-          cloneNode.replaceWith(img);
-        } catch (err) {
-          continue;
+      // For default and html formats, convert mermaid SVGs to PNGs
+      if (format === 'default' || format === 'html') {
+        const sourceMermaids = Array.from(content.querySelectorAll('.mermaid'));
+        const cloneMermaids = Array.from(clone.querySelectorAll('.mermaid'));
+        for (let i = 0; i < sourceMermaids.length; i += 1) {
+          const svg = sourceMermaids[i].querySelector('svg');
+          const cloneNode = cloneMermaids[i];
+          if (!svg || !cloneNode) continue;
+          try {
+            const pngUrl = await svgToPngDataUrl(svg);
+            if (!pngUrl) continue;
+            const img = document.createElement('img');
+            img.src = pngUrl;
+            img.alt = 'Mermaid diagram';
+            img.style.maxWidth = '100%';
+            img.style.height = 'auto';
+            img.style.display = 'block';
+            img.style.margin = '0 auto';
+            cloneNode.replaceWith(img);
+          } catch (err) {
+            continue;
+          }
         }
       }
 
-      const html = buildCopyHtml(clone.innerHTML);
-      const text = clone.innerText;
+      const htmlContent = buildCopyHtml(clone.innerHTML);
+      const textContent = clone.innerText;
+
       try {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            'text/html': new Blob([html], { type: 'text/html' }),
-            'text/plain': new Blob([text], { type: 'text/plain' })
-          })
-        ]);
+        if (format === 'default') {
+          // Copy both HTML and plain text (original behavior)
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              'text/html': new Blob([htmlContent], { type: 'text/html' }),
+              'text/plain': new Blob([textContent], { type: 'text/plain' })
+            })
+          ]);
+        } else if (format === 'html') {
+          await navigator.clipboard.write([
+            new ClipboardItem({
+              'text/html': new Blob([htmlContent], { type: 'text/html' }),
+              'text/plain': new Blob([textContent], { type: 'text/plain' })
+            })
+          ]);
+        } else if (format === 'markdown') {
+          await navigator.clipboard.writeText(htmlToMarkdown(clone));
+        } else {
+          // text
+          await navigator.clipboard.writeText(textContent);
+        }
       } catch (err) {
-        await navigator.clipboard.writeText(text);
+        await navigator.clipboard.writeText(textContent);
       }
 
-      if (copyButton) {
-        copyButton.classList.add('copied');
-        const originalTitle = copyButton.title;
-        copyButton.title = 'Copied!';
-        setTimeout(() => {
-          copyButton.classList.remove('copied');
-          copyButton.title = originalTitle;
-        }, 2000);
-      }
+      showCopyFeedback();
+    }
+
+    function showCopyFeedback() {
+      if (!copyButton) return;
+      const dropdown = document.getElementById('copy-page-dropdown');
+      const originalIcon = copyButton.innerHTML;
+      copyButton.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg><span class="copy-text">Copied!</span>';
+      copyButton.classList.add('copied');
+      if (dropdown) dropdown.classList.add('copied');
+      copyButton.title = 'Copied!';
+      setTimeout(() => {
+        copyButton.innerHTML = originalIcon;
+        copyButton.classList.remove('copied');
+        if (dropdown) dropdown.classList.remove('copied');
+        copyButton.title = 'Copy document';
+      }, 2000);
     }
 
     function toggleSidebar() {
@@ -1176,7 +1369,9 @@ const html = (
 
     generateTOC();
     hljs.highlightAll();
-    if (copyButton) copyButton.addEventListener('click', copyPageContent);
+    if (copyButton) copyButton.addEventListener('click', () => copyPageAs('default'));
+    const copyToggle = document.getElementById('copy-page-toggle');
+    if (copyToggle) copyToggle.addEventListener('click', toggleCopyPageMenu);
   </script>
 </body>
 </html>
