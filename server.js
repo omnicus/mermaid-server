@@ -155,6 +155,57 @@ const handleApiRequest = (req, res, url, pathname) => {
     try {
       const data = body ? JSON.parse(body) : {};
 
+      const favoriteMatch = pathname.match(
+        /^\/api\/projects\/([^/]+)\/favorites(?:\/([^/]+))?$/,
+      );
+
+      if (favoriteMatch) {
+        const projectId = favoriteMatch[1];
+        const favoriteId = favoriteMatch[2];
+
+        if (req.method === 'POST' && !favoriteId) {
+          if (typeof data.path !== 'string' || typeof data.name !== 'string') {
+            res.statusCode = 400;
+            res.end(JSON.stringify({ error: 'Name and path are required' }));
+            return;
+          }
+          const favorite = config.addFavorite(projectId, data);
+          if (!favorite) {
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'Project not found' }));
+            return;
+          }
+          res.end(JSON.stringify(favorite));
+          return;
+        }
+
+        if (req.method === 'PATCH' && favoriteId) {
+          const favorite = config.updateFavorite(projectId, favoriteId, data);
+          if (!favorite) {
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'Favorite not found' }));
+            return;
+          }
+          res.end(JSON.stringify(favorite));
+          return;
+        }
+
+        if (req.method === 'DELETE' && favoriteId) {
+          const deleted = config.deleteFavorite(projectId, favoriteId);
+          if (!deleted) {
+            res.statusCode = 404;
+            res.end(JSON.stringify({ error: 'Favorite not found' }));
+            return;
+          }
+          res.end(JSON.stringify({ success: true }));
+          return;
+        }
+
+        res.statusCode = 400;
+        res.end(JSON.stringify({ error: 'Invalid favorites request' }));
+        return;
+      }
+
       if (pathname === '/api/projects' && req.method === 'POST') {
         const newProject = config.addProject(data.name, data.path);
         res.end(JSON.stringify(newProject));
@@ -222,7 +273,16 @@ const handleProjectRequest = (res, projectId, subPath, url) => {
       const readmeFilePath =
         subPath === '/' ? 'README.md' : path.join(subPath, 'README.md');
       const nav = `<div class="back-link"><a href="javascript:history.back()">&larr; Back</a><span style="color:var(--border-color)">|</span><a href="?all=true">Show all files</a></div>`;
-      res.end(html(renderMarkdown(content), title, projectId, nav, readmeFilePath));
+      res.end(
+        html(
+          renderMarkdown(content),
+          title,
+          projectId,
+          nav,
+          readmeFilePath,
+          readmeFilePath,
+        ),
+      );
     } else {
       const files = getMarkdownFiles(
         fullPath,
@@ -246,6 +306,8 @@ const handleProjectRequest = (res, projectId, subPath, url) => {
           project.name,
           projectId,
           nav,
+          null,
+          subPath,
         ),
       );
     }
@@ -253,7 +315,9 @@ const handleProjectRequest = (res, projectId, subPath, url) => {
     const content = fs.readFileSync(fullPath, 'utf-8');
     const title = getH1Title(content) || path.basename(fullPath);
     const nav = `<div class="back-link"><a href="javascript:history.back()">&larr; Back</a></div>`;
-    res.end(html(renderMarkdown(content), title, projectId, nav, subPath));
+    res.end(
+      html(renderMarkdown(content), title, projectId, nav, subPath, subPath),
+    );
   } else {
     // Serve static files
     res.setHeader('Content-Type', getMimeType(fullPath));
