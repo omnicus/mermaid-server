@@ -20,6 +20,7 @@ const {
   setupWatcher,
   addClient,
   removeClient,
+  searchFiles,
 } = require('./lib/utils');
 
 const PORT = process.env.PORT || 4000;
@@ -82,6 +83,51 @@ const handleApiRequest = (req, res, url, pathname) => {
       res.statusCode = 400;
       res.end(JSON.stringify({ error: e.message }));
     }
+    return;
+  }
+
+  // Search endpoint
+  if (pathname === '/api/search') {
+    const query = url.searchParams.get('q');
+    const projectId = url.searchParams.get('projectId');
+
+    if (!query || query.trim().length === 0) {
+      res.end(JSON.stringify({ results: [] }));
+      return;
+    }
+
+    const results = [];
+
+    if (projectId) {
+      // Search within specific project
+      const project = config.findProject(projectId);
+      if (project) {
+        const projectResults = searchFiles(project.path, query);
+        results.push(
+          ...projectResults.map((r) => ({
+            ...r,
+            projectId: project.id,
+            projectName: project.name,
+          })),
+        );
+      }
+    } else {
+      // Search across all projects
+      const projects = config.getProjects();
+      for (const project of projects) {
+        const projectResults = searchFiles(project.path, query, 5); // Limit per project
+        results.push(
+          ...projectResults.map((r) => ({
+            ...r,
+            projectId: project.id,
+            projectName: project.name,
+          })),
+        );
+        if (results.length >= 15) break;
+      }
+    }
+
+    res.end(JSON.stringify({ results: results.slice(0, 15) }));
     return;
   }
 
